@@ -1,62 +1,86 @@
-ffibuild.Build({
-	name = "freeimage",
-	url = "https://svn.code.sf.net/p/freeimage/svn/FreeImage/trunk",
-	cmd = "make",
-	addon = vfs.GetAddonFromPath(SCRIPT_PATH),
+ffibuild.Build(
+	{
+		name = "freeimage",
+		linux = [[
+			FROM ubuntu:20.04
+			ARG DEBIAN_FRONTEND=noninteractive
+			ENV TZ=America/New_York
+			RUN apt-get update
 
-	c_source = [[#include "FreeImage.h"]],
-	gcc_flags = "-I./Source",
+			RUN apt-get install -y subversion g++ make
 
-	process_header = function(header)
-		local meta_data = ffibuild.GetMetaData(header)
-		meta_data.functions.FreeImage_RegisterExternalPlugin = nil
+			WORKDIR /src
+			RUN svn checkout  --non-interactive --trust-server-cert https://svn.code.sf.net/p/freeimage/svn/FreeImage/trunk .
+			RUN make --jobs 32
+		]],
+		addon = vfs.GetAddonFromPath(SCRIPT_PATH),
+		c_source = [[#include "FreeImage.h"]],
+		gcc_flags = "-I./Source",
+		process_header = function(header)
+			local meta_data = ffibuild.GetMetaData(header)
+			meta_data.functions.FreeImage_RegisterExternalPlugin = nil
+			return meta_data:BuildMinimalHeader(
+				function(name)
+					return name:find("^FreeImage_")
+				end,
+				function(name)
+					return name:find("^FI")
+				end,
+				true,
+				true
+			)
+		end,
+		build_lua = function(header, meta_data)
+			local s = [=[
+				local ffi = require("ffi")
+				local CLIB = assert(ffi.load("freeimage"))
+				ffi.cdef([[]=] .. header .. [=[]])
+			]=]
+			s = s .. "local library = " .. meta_data:BuildLuaFunctions("^FreeImage_(.+)")
 
-		return meta_data:BuildMinimalHeader(function(name) return name:find("^FreeImage_") end, function(name) return name:find("^FI") end, true, true)
-	end,
+			do -- enums
+				s = s .. "library.e = {\n"
 
-	build_lua = function(header, meta_data)
-		local lua = ffibuild.StartLibrary(header)
-		lua = lua .. "library = " .. meta_data:BuildFunctions("^FreeImage_(.+)")
+				for basic_type, type in pairs(meta_data.enums) do
+					for i, enum in ipairs(type.enums) do
+						local friendly = enum.key:match("^FI(.+)")
 
-		do -- enums
-			lua = lua .. "library.e = {\n"
-			for basic_type, type in pairs(meta_data.enums) do
-				for i, enum in ipairs(type.enums) do
-					local friendly = enum.key:match("^FI(.+)")
-					if friendly then
-						if friendly:find("^T_") then
-							friendly = friendly:gsub("^T", "IMAGE_TYPE")
-						elseif friendly:find("^CC_") then
-							friendly = friendly:gsub("^CC", "COLOR_CHANNEL")
-						elseif friendly:find("^C_") then
-							friendly = friendly:gsub("^C", "COLOR_TYPE")
-						elseif friendly:find("^F_") then
-							friendly = friendly:gsub("^F", "FORMAT")
-						elseif friendly:find("^Q_") then
-							friendly = friendly:gsub("^Q", "QUANTIZE")
-						elseif friendly:find("^LTER_") then
-							friendly = friendly:gsub("^LTER", "IMAGE_FILTER")
-						elseif friendly:find("^D_") then
-							friendly = friendly:gsub("^D", "DITHER")
-						elseif friendly:find("^MD_") then
-							friendly = friendly:gsub("^MD", "METADATA")
-						elseif friendly:find("^DT_") then
-							friendly = friendly:gsub("^DT", "METADATA_TYPE")
-						elseif friendly:find("^JPEG_OP_") then
-							friendly = friendly:gsub("^JPEG_OP", "JPEG_OPERATION")
-						elseif friendly:find("^JPEG_OP_") then
-							friendly = friendly:gsub("^JPEG_OP", "JPEG_OPERATION")
-						elseif friendly:find("^TMO_") then
-							friendly = friendly:gsub("^TMO", "TONEMAP_OPERATOR")
+						if friendly then
+							if friendly:find("^T_") then
+								friendly = friendly:gsub("^T", "IMAGE_TYPE")
+							elseif friendly:find("^CC_") then
+								friendly = friendly:gsub("^CC", "COLOR_CHANNEL")
+							elseif friendly:find("^C_") then
+								friendly = friendly:gsub("^C", "COLOR_TYPE")
+							elseif friendly:find("^F_") then
+								friendly = friendly:gsub("^F", "FORMAT")
+							elseif friendly:find("^Q_") then
+								friendly = friendly:gsub("^Q", "QUANTIZE")
+							elseif friendly:find("^LTER_") then
+								friendly = friendly:gsub("^LTER", "IMAGE_FILTER")
+							elseif friendly:find("^D_") then
+								friendly = friendly:gsub("^D", "DITHER")
+							elseif friendly:find("^MD_") then
+								friendly = friendly:gsub("^MD", "METADATA")
+							elseif friendly:find("^DT_") then
+								friendly = friendly:gsub("^DT", "METADATA_TYPE")
+							elseif friendly:find("^JPEG_OP_") then
+								friendly = friendly:gsub("^JPEG_OP", "JPEG_OPERATION")
+							elseif friendly:find("^JPEG_OP_") then
+								friendly = friendly:gsub("^JPEG_OP", "JPEG_OPERATION")
+							elseif friendly:find("^TMO_") then
+								friendly = friendly:gsub("^TMO", "TONEMAP_OPERATOR")
+							end
+
+							s = s .. "\t" .. friendly .. " = ffi.cast(\"" .. basic_type .. "\", \"" .. enum.key .. "\"),\n"
 						end
-						lua =  lua .. "\t" .. friendly .. " = ffi.cast(\""..basic_type.."\", \""..enum.key.."\"),\n"
 					end
 				end
-			end
-			lua = lua .. "}\n"
-		end
 
-		lua = lua .. [[
+				s = s .. "}\n"
+			end
+
+			s = s .. [[
 		do
 			local function pow2ceil(n)
 				return 2 ^ math.ceil(math.log(n) / math.log(2))
@@ -214,7 +238,7 @@ ffibuild.Build({
 
 				ffi.gc(bitmap, library.Unload)
 
-				table.insert(out, {w = width, h = height, x = x, y = y, ms = ms, data = data})
+				list.insert(out, {w = width, h = height, x = x, y = y, ms = ms, data = data})
 			end
 
 			library.CloseMultiBitmap(temp, 0)
@@ -249,7 +273,9 @@ ffibuild.Build({
 			return buffer_box[0], size_box[0]
 		end
 		]]
-
-		return ffibuild.EndLibrary(lua, header)
-	end,
-})
+			s = s .. "library.clib = CLIB\n"
+			s = s .. "return library\n"
+			return s
+		end,
+	}
+)

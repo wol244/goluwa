@@ -1,6 +1,6 @@
 local chatsounds = ... or chatsounds
 
-local function read_list(base_url, sounds)
+local function read_list(base_url, sounds, list_id, skip_list)
 	local tree = {}
 	local list = {}
 	local count = 0
@@ -16,70 +16,80 @@ local function read_list(base_url, sounds)
 		else
 			tree[realm] = tree[realm] or {}
 			list[realm] = list[realm] or {}
-
 			tree[realm][trigger] = tree[realm][trigger] or {}
-			table.insert(tree[realm][trigger], {
+			list.insert(tree[realm][trigger], {
 				path = path,
 				base_path = base_url,
 			})
-
 			list[realm][trigger] = path
 		end
 	end
 
-	tree = chatsounds.TableToTree(tree)
-	chatsounds.tree = chatsounds.tree or {}
-	table.merge(chatsounds.tree, tree)
+	tree = chatsounds.TableToTree(tree, list_id)
 
-	chatsounds.list = chatsounds.list or {}
-	table.merge(chatsounds.list, list, true)
+	if list_id then
+		chatsounds.custom = chatsounds.custom or {}
+		chatsounds.custom[list_id] = {
+			tree = tree,
+			list = list,
+		}
+	else
+		chatsounds.tree = chatsounds.tree or {}
+		table.merge(chatsounds.tree, tree)
+		chatsounds.list = chatsounds.list or {}
+		table.merge(chatsounds.list, list, true)
+	end
+
 	chatsounds.GenerateAutocomplete()
 
-	llog("loaded sounds from ", base_url)
+	if list_id then
+		llog("loaded " .. #sounds .. " unqiue sounds from ", base_url)
+	end
 end
 
-function chatsounds.BuildFromGithub(repo, location)
+function chatsounds.BuildFromGithub(repo, location, list_id)
 	location = location or "sounds/chatsounds"
-
 	local base_url = "https://raw.githubusercontent.com/" .. repo .. "/master/" .. location .. "/"
 
-	resource.Download(base_url .. "list.msgpack", nil, nil, true):Then(function(path)
-		 llog("found list.msgpack for ", location)
+	resource.Download(base_url .. "list.msgpack", nil, nil, true, "msgpack"):Then(function(path)
+		--llog("found list.msgpack for ", location)
 		local val = vfs.Read(path)
-		read_list(base_url, val)
+		read_list(base_url, val, list_id)
 	end):Catch(function(reason)
-		 llog(repo, ": unable to find list.msgpack from \"", location, "\"")
-		 llog(repo, ": parsing with github api instead (slow)")
+		if list_id then
+
+		--llog(repo, ": unable to find list.msgpack from \"", location, "\"")
+		--llog(repo, ": parsing with github api instead (slower)")
+		end
 
 		local url = "https://api.github.com/repos/" .. repo .. "/git/trees/master?recursive=1"
 
-		resource.Download(url, nil, nil, true):Then(function(path)
+		resource.Download(url, nil, nil, true):Then(function(path, etag_updated)
 			local cached_path = "cache/" .. crypto.CRC32(url .. location) .. ".chatsounds_tree"
 			local sounds = serializer.ReadFile("msgpack", cached_path)
 
-			if sounds then
+			if not etag_updated and sounds then
 				if sounds[1] and #sounds[1] >= 3 then
-					read_list(base_url, sounds)
+					read_list(base_url, sounds, list_id)
 					return
-				-- else
-				-- 	llog("found cached list but format doesn't look right, regenerating.")
+				else
+					llog("found cached list but format doesn't look right, regenerating.")
 				end
 			end
 
+			llog("change detected ", base_url)
 			local sounds = {}
 			local str = assert(io.open(path, "rb"):read("*all"))
 			local i = 1
-			for path in str:gmatch('"path":%s?"(.-)"[\n,}]') do
-				if path:startswith(location) and path:endswith(".ogg") then
-					path = path:sub(#location + 2) -- start character after location, and another /
 
+			for path in str:gmatch("\"path\":%s?\"(.-)\"[\n,}]") do
+				if path:starts_with(location) and path:ends_with(".ogg") then
+					path = path:sub(#location + 2) -- start character after location, and another /
 					local tbl = path:split("/")
 					local realm = tbl[1]
 					local trigger = tbl[2]
 
-					if not tbl[3] then
-						trigger = trigger:sub(1, -#".ogg" - 1)
-					end
+					if not tbl[3] then trigger = trigger:sub(1, -#".ogg" - 1) end
 
 					sounds[i] = {
 						realm,
@@ -87,7 +97,7 @@ function chatsounds.BuildFromGithub(repo, location)
 						path,
 					}
 
-					if trigger:startswith("-") then
+					if trigger:starts_with("-") then
 						sounds[i][2] = sounds[i][2]:sub(2)
 						sounds[i][4] = realm .. "/" .. trigger .. ".txt"
 					end
@@ -97,8 +107,7 @@ function chatsounds.BuildFromGithub(repo, location)
 			end
 
 			serializer.WriteFile("msgpack", cached_path, sounds)
-
-			read_list(base_url, sounds)
+			read_list(base_url, sounds, list_id)
 		end)
 	end)
 end

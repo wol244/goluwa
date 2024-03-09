@@ -1,4 +1,3 @@
-
 do
 	local player = gine.env.player
 
@@ -6,7 +5,7 @@ do
 		local out = {}
 
 		for _, cl in ipairs(clients.GetAll()) do
-			table.insert(out, gine.WrapObject(cl, "Player"))
+			list.insert(out, gine.WrapObject(cl, "Player"))
 		end
 
 		return out
@@ -20,9 +19,7 @@ do
 		local out = {}
 
 		for _, cl in ipairs(clients.GetAll()) do
-			if not cl:IsBot() then
-				table.insert(out, gine.WrapObject(cl, "Player"))
-			end
+			if not cl:IsBot() then list.insert(out, gine.WrapObject(cl, "Player")) end
 		end
 
 		return out
@@ -32,9 +29,7 @@ do
 		local out = {}
 
 		for _, cl in ipairs(clients.GetAll()) do
-			if cl:IsBot() then
-				table.insert(out, gine.WrapObject(cl, "Player"))
-			end
+			if cl:IsBot() then list.insert(out, gine.WrapObject(cl, "Player")) end
 		end
 
 		return out
@@ -45,7 +40,7 @@ do
 	function gine.env.player.CreateNextBot(name)
 		local client = clients.CreateBot()
 		client:SetNick(name)
-		return gine.WrapObject(cllient, "Player")
+		return gine.WrapObject(client, "Player")
 	end
 
 	function gine.env.LocalPlayer()
@@ -57,18 +52,32 @@ do
 		return gine.env.LocalPlayer()
 	end
 
+	function gine.env.GetViewEntity()
+		return gine.env.LocalPlayer()
+	end
+
 	local META = gine.GetMetaTable("Player")
 
-	function META:Crouching()
+	function META:Crouching() end
 
+	function META:GetShootPos()
+		if CLIENT then gine.env.EyePos() end
+
+		return gine.env.Vector()
 	end
 
 	function META:GetAimVector()
-		if CLIENT then
-			return gine.env.EyeVector()
-		end
+		if CLIENT then return gine.env.EyeVector() end
 
 		return gine.env.Vector()
+	end
+
+	function META:GetHull()
+		return gine.env.Vector(-16, -16, 0), gine.env.Vector(16, 16, 72)
+	end
+
+	function META:GetHullDuck()
+		return gine.env.Vector(-16, -16, 0), gine.env.Vector(16, 16, 32)
 	end
 
 	function META:GetViewEntity()
@@ -119,9 +128,7 @@ do
 		return false
 	end
 
-	function META:GetObserverTarget()
-
-	end
+	function META:GetObserverTarget() end
 
 	function META:GetRagdollEntity()
 		return NULL
@@ -148,7 +155,7 @@ do
 	end
 
 	function META:UserID()
-		return math.abs(tonumber(self:UniqueID())%333) -- todo
+		return math.abs(tonumber(self:UniqueID()) % 333) -- todo
 	end
 
 	function META:GetFriendStatus()
@@ -183,12 +190,16 @@ do
 		return true
 	end
 
-	--if SERVER then
-		function META:IPAddress()
-			return "192.168.1.101:27005"
-		end
-	--end
+	function META:FlashlightIsOn()
+		return false
+	end
 
+	--if SERVER then
+	function META:IPAddress()
+		return "192.168.1.101:27005"
+	end
+
+	--end
 	function META:IsSpeaking()
 		return false
 	end
@@ -198,6 +209,7 @@ do
 	end
 
 	function META:SetNoCollideWithTeammates(b) end
+
 	function META:SetAvoidPlayers(b) end
 
 	function META:GetViewModel()
@@ -205,16 +217,11 @@ do
 		return self.__obj.viewmodel
 	end
 
-	function META:UnSpectate()
+	function META:UnSpectate() end
 
-	end
-
-	function META:SetPlayerColor()
-
-	end
+	function META:SetPlayerColor() end
 
 	gine.GetSet(META, "Hands", NULL)
-
 	gine.GetSet(META, "WalkSpeed", 200)
 	gine.GetSet(META, "RunSpeed", 400)
 	gine.GetSet(META, "CrouchedWalkSpeed", 0.3)
@@ -227,74 +234,88 @@ end
 do
 	gine.AddEvent("ClientEntered", function(client)
 		local ply = gine.WrapObject(client, "Player")
-		gine.env.hook.Run("player_connect", {
-			name = ply:Nick(),
-			networkid = ply:SteamID(),
-			address = ply:IPAddress(),
-			userid = ply:UserID(),
-			bot = 0, -- ply:IsBot(),
-			index = ply:EntIndex(),
-		})
-
+		gine.env.hook.Run(
+			"player_connect",
+			{
+				name = ply:Nick(),
+				networkid = ply:SteamID(),
+				address = ply:IPAddress(),
+				userid = ply:UserID(),
+				bot = 0, -- ply:IsBot(),
+				index = ply:EntIndex(),
+			}
+		)
 		gine.env.gamemode.Call("PlayerConnect", ply:Nick(), ply:IPAddress())
 
-		event.Delay(0.5, function()
-			gine.env.hook.Run("player_spawn", {
-				userid = ply:UserID(),
-			})
-
-			event.Delay(0, function()
-				gine.env.hook.Run("player_activate", {
+		timer.Delay(
+			0.5,
+			function()
+				gine.env.hook.Run("player_spawn", {
 					userid = ply:UserID(),
 				})
 
-				event.Delay(0, function()
-					gine.env.gamemode.Call("OnEntityCreated", ply)
-					gine.env.gamemode.Call("NetworkEntityCreated", ply)
-					gine.env.gamemode.Call("PlayerInitialSpawn", ply)
-					gine.env.gamemode.Call("PlayerSpawn", ply)
-				end, nil, client)
-			end, nil, client)
-		end, nil, client)
+				timer.Delay(
+					0,
+					function()
+						gine.env.hook.Run("player_activate", {
+							userid = ply:UserID(),
+						})
+
+						timer.Delay(
+							0,
+							function()
+								gine.env.gamemode.Call("OnEntityCreated", ply)
+								gine.env.gamemode.Call("NetworkEntityCreated", ply)
+								gine.env.gamemode.Call("PlayerInitialSpawn", ply)
+								gine.env.gamemode.Call("PlayerSpawn", ply)
+							end,
+							nil,
+							client
+						)
+					end,
+					nil,
+					client
+				)
+			end,
+			nil,
+			client
+		)
 	end)
 
 	gine.AddEvent("ClientLeft", function(client, reason)
 		local ply = gine.WrapObject(client, "Player")
-
 		gine.env.gamemode.Call("EntityRemoved", ply)
 		gine.env.gamemode.Call("PlayerDisconnected", ply)
-
-		gine.env.hook.Run("player_disconnect", {
-			name = ply:Nick(),
-			networkid = ply:SteamID(),
-			userid = ply:UserID(),
-			bot = ply:IsBot(),
-			reason = reason,
-		})
+		gine.env.hook.Run(
+			"player_disconnect",
+			{
+				name = ply:Nick(),
+				networkid = ply:SteamID(),
+				userid = ply:UserID(),
+				bot = ply:IsBot(),
+				reason = reason,
+			}
+		)
 	end)
 
 	gine.AddEvent("ClientChat", function(client, msg)
 		local ply = gine.WrapObject(client, "Player")
+
 		if gine.env.gamemode.Call("OnPlayerChat", ply, msg, false, not ply:Alive()) == true then
+			if SERVER then message.Broadcast("say", client, str, chat.seed) end
 
-			if SERVER then
-				message.Broadcast("say", client, str, chat.seed)
-			end
-
-			if SERVER or not network.IsConnected() then
-				chat.seed = chat.seed + 1
-			end
+			if SERVER or not network.IsConnected() then chat.seed = chat.seed + 1 end
 
 			return false
 		end
 	end)
 
 	if RELOAD then
-		for k,v in pairs(gine.env.player.GetAll()) do
+		for k, v in pairs(gine.env.player.GetAll()) do
 			event.Call("ClientLeft", v.__obj, "reloading")
 		end
 
-		for k,v in pairs(gine.env.player.GetAll()) do
+		for k, v in pairs(gine.env.player.GetAll()) do
 			event.Call("ClientEntered", v.__obj)
 		end
 	end

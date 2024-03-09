@@ -2,7 +2,6 @@ local steam = ... or _G.steam
 
 commands.Add("mount=string", function(game)
 	local game_info = assert(steam.MountSourceGame(game))
-
 	llog("mounted %s", game_info.name)
 end)
 
@@ -21,13 +20,14 @@ end)
 
 commands.Add("mount_clear", function()
 	local ok = false
-	for i,v in ipairs(vfs.Find("cache/archive/", true)) do
+
+	for i, v in ipairs(vfs.Find("cache/archive/", true)) do
 		vfs.Delete(v)
 		ok = true
 	end
-	if not ok and vfs.Delete("cache/source_games") then
-		ok = true
-	end
+
+	if not ok and vfs.Delete("cache/source_games") then ok = true end
+
 	if ok then
 		logn("removed cache/archive/* and data/source_games")
 	else
@@ -35,25 +35,30 @@ commands.Add("mount_clear", function()
 	end
 end)
 
-pvars.Setup2({
-	key = "steam_mount",
-	default = {},
-	get_list = function()
-		local list = {}
-		for _, info in pairs(steam.GetSourceGames()) do
-			list[info.filesystem.steamappid] = {friendly = info.name}
-		end
-		return list
-	end,
-	callback = function(list)
-		for appid, v in pairs(steam.GetMountedSourceGames()) do
-			steam.UnmountSourceGame(appid)
-		end
-		for i,v in ipairs(list) do
-			steam.MountSourceGame(v)
-		end
-	end,
-})
+pvars.Setup2(
+	{
+		key = "steam_mount",
+		default = {},
+		get_list = function()
+			local lst = {}
+
+			for _, info in pairs(steam.GetSourceGames()) do
+				lst[info.filesystem.steamappid] = {friendly = info.name}
+			end
+
+			return lst
+		end,
+		callback = function(lst)
+			for appid, v in pairs(steam.GetMountedSourceGames()) do
+				steam.UnmountSourceGame(appid)
+			end
+
+			for i, v in ipairs(lst) do
+				steam.MountSourceGame(v)
+			end
+		end,
+	}
+)
 
 commands.Add("list_games", function()
 	if not next(steam.GetSourceGames()) then
@@ -70,11 +75,9 @@ commands.Add("list_games", function()
 	end
 end)
 
-commands.Add("list_maps=string", function(search)
+commands.Add("list_maps", function(search)
 	for _, name in ipairs(vfs.Find("maps/%.bsp$")) do
-		if not search or name:find(search) then
-			logn(name:sub(0, -5))
-		end
+		if not search or name:find(search) then logn(name:sub(0, -5)) end
 	end
 end)
 
@@ -88,7 +91,12 @@ function steam.GetInstallPath()
 	local path
 
 	if WINDOWS then
-		path = system.GetRegistryValue("CurrentUser/Software/Valve/Steam/SteamPath") or (X64 and "C:\\Program Files (x86)\\Steam" or "C:\\Program Files\\Steam")
+		path = system.GetRegistryValue("CurrentUser/Software/Valve/Steam/SteamPath") or
+			(
+				X64 and
+				"C:\\Program Files (x86)\\Steam" or
+				"C:\\Program Files\\Steam"
+			)
 	elseif OSX then
 		path = os.getenv("HOME") .. "/Library/Application Support/Steam"
 	else
@@ -101,6 +109,10 @@ function steam.GetInstallPath()
 		if not vfs.IsDirectory(path) then
 			path = os.getenv("HOME") .. "/.wine/drive_c/Program Files (x86)/Steam"
 		end
+
+		if not vfs.IsDirectory(path) then
+			path = os.getenv("HOME") .. "/.var/app/com.valvesoftware.Steam/.local/share/Steam"
+		end
 	end
 
 	return path --lfs.symlinkattributes(path, "mode") and path or nil
@@ -108,18 +120,16 @@ end
 
 function steam.GetLibraryFolders()
 	local base = steam.GetInstallPath()
-
 	local str = vfs.Read(base .. "/config/config.vdf", "r")
 
 	if not str then return {} end
 
 	local tbl = {base .. "/steamapps/"}
-
 	local config = utility.VDFToTable(str, true)
 
 	for key, path in pairs(config.installconfigstore.software.valve.steam) do
 		if key:find("baseinstallfolder_") then
-			table.insert(tbl, vfs.FixPathSlashes(path) .. "/steamapps/")
+			list.insert(tbl, vfs.FixPathSlashes(path) .. "/steamapps/")
 		end
 	end
 
@@ -129,9 +139,8 @@ end
 function steam.GetGamePath(game)
 	for _, dir in pairs(steam.GetLibraryFolders()) do
 		local path = dir .. "common/" .. game .. "/"
-		if vfs.IsDirectory(path) then
-			return path
-		end
+
+		if vfs.IsDirectory(path) then return path end
 	end
 
 	return ""
@@ -142,11 +151,12 @@ function steam.GetGameFolders(skip_mods)
 
 	for _, library in ipairs(steam.GetLibraryFolders()) do
 		for _, game in ipairs(vfs.Find(library .. "common/", true)) do
-			table.insert(games, game .. "/")
+			list.insert(games, game .. "/")
 		end
+
 		if not skip_mods then
 			for _, mod in ipairs(vfs.Find(library .. "sourcemods/", true)) do
-				table.insert(games, mod .. "/")
+				list.insert(games, mod .. "/")
 			end
 		end
 	end
@@ -158,147 +168,204 @@ function steam.GetSourceGames()
 	local found = serializer.ReadFile("msgpack", "cache/source_games")
 
 	if found and found[1] then
-		for i,v in ipairs(found) do
+		for i, v in ipairs(found) do
 			if not vfs.IsFile(v.gameinfo_path) then
 				logn("unable to find ", v.gameinfo_path, ", rebuilding steam.GetSourceGames cache")
 				found = nil
+
 				break
 			end
 		end
-		if found then
-			return found
-		end
+
+		if found then return found end
 	end
 
 	found = {}
-
 	local done = {}
 
-	for _, game_dir in ipairs(steam.GetGameFolders()) do
-		for _, dir in ipairs(vfs.Find("os:" .. game_dir, true)) do
-			dir = dir .. "/"
+	local function collect_gameinfos()
+		local gameinfos = {}
 
-			local path = "os:" .. dir .. "gameinfo.txt"
-			local str = vfs.Read(path)
+		for _, game_dir in ipairs(steam.GetGameFolders()) do
+			if vfs.IsDirectory("os:" .. game_dir .. "/game") then
+				for _, dir in ipairs(vfs.Find("os:" .. game_dir .. "game/", true)) do
+					if not dir:ends_with("/core") then
+						dir = dir .. "/"
+						local path = "os:" .. dir .. "gameinfo.gi"
+						local str = vfs.Read(path)
+						local game_info_dir = dir
+						dir = vfs.GetParentFolderFromPath(dir)
 
-			if not str then
-				path = "os:" .. dir .. "GameInfo.txt"
-				str = vfs.Read(path)
-			end
+						if str then
+							local tbl = utility.VDFToTable(str, true)
 
-			local game_info_dir = dir
-			dir = vfs.GetParentFolderFromPath(dir)
-
-			if str then
-				local tbl = utility.VDFToTable(str, true)
-				if tbl and tbl.gameinfo and tbl.gameinfo.game and tbl.gameinfo.filesystem then
-					tbl = tbl.gameinfo
-
-					if not tbl.filesystem.steamappid or not done[tbl.filesystem.steamappid] then
-
-						done[tbl.filesystem.steamappid] = true
-
-						tbl.gameinfo_path = path
-
-						tbl.game_dir = game_dir
-
-						local name = tbl.game
-						if tbl.title and tbl.title ~= name then
-							name = name .. " - " .. tbl.title
-						end
-						if tbl.title and tbl.title2 and tbl.title2 ~= tbl.title then
-							name = name .. " - " .. tbl.title2
-						end
-						tbl.name = name
-
-						if tbl.filesystem then
-							local fixed = {}
-
-							local done = {}
-							for _, v in pairs(tbl.filesystem.searchpaths) do
-								local tbl = type(v) == "string" and {v} or v
-								for _, path in pairs(tbl) do
-									if path:find("|", nil, true) then
-										path = path:replace("|gameinfo_path|", game_info_dir)
-										path = path:replace("|all_source_engine_paths|", dir)
-									else
-										path = dir .. path
-									end
-
-									path = vfs.FixPathSlashes(path)
-
-									if path:endswith("*") then
-										if not done[path] then
-											table.insert(fixed, path)
-											done[path] = true
-										end
-									else
-										if path:endswith(".") then
-											path = path:sub(0,-2)
-										end
-
-										if path:endswith("/") then
-											local test = path .. "/"
-											if vfs.IsDirectory(test) then
-												if not done[test] then
-													table.insert(fixed, test)
-													done[test] = true
-												end
-											end
-										else
-											local test = path .. "/"
-											if vfs.IsDirectory(test) then
-												if not done[test] then
-													table.insert(fixed, test)
-													done[test] = true
-												end
-											end
-
-											local test = path .. "/pak01_dir.vpk/"
-											if vfs.IsDirectory(test) then
-												if not done[test] then
-													table.insert(fixed, test)
-													done[test] = true
-												end
-											end
-										end
-
-										if path:endswith(".vpk") and not vfs.IsFile("os:" .. path) then
-											local path = path:gsub("(.+/.+)%.vpk", "%1_dir.vpk") .. "/"
-											if not done[path] then
-												table.insert(fixed, path)
-												done[path] = true
-											end
-										end
-									end
-								end
+							if tbl and tbl.gameinfo and tbl.gameinfo.game and tbl.gameinfo.filesystem then
+								local core = utility.VDFToTable(vfs.Read("os:" .. game_dir .. "game/core/gameinfo.gi"), true)
+								tbl = tbl.gameinfo
+								tbl = table.merge(core.gameinfo, tbl)
+								tbl.gameinfo_path = path
+								tbl.game_dir = game_dir
+								tbl.vdf_directory = dir
+								list.insert(gameinfos, tbl)
 							end
-
-							-- utility.VDFToTable does not support ordered keys.
-							-- lets just prioritize vpk in the meantime
-							local sorted = {}
-							for _, v in ipairs(fixed) do
-								if v:endswith(".vpk/") then
-									table.insert(sorted, v)
-								end
-							end
-							for _, v in ipairs(fixed) do
-								if not v:endswith(".vpk/") then
-									table.insert(sorted, v)
-								end
-							end
-							tbl.filesystem.searchpaths = sorted
-
-							table.insert(found, tbl)
 						end
 					end
 				end
+			end
+
+			for _, dir in ipairs(vfs.Find("os:" .. game_dir, true)) do
+				dir = dir .. "/"
+				local path = "os:" .. dir .. "gameinfo.txt"
+				local str = vfs.Read(path)
+
+				if not str then
+					path = "os:" .. dir .. "GameInfo.txt"
+					str = vfs.Read(path)
+				end
+
+				local game_info_dir = dir
+				dir = vfs.GetParentFolderFromPath(dir)
+
+				if str then
+					local tbl = utility.VDFToTable(str, true)
+
+					if tbl and tbl.gameinfo and tbl.gameinfo.game and tbl.gameinfo.filesystem then
+						tbl = tbl.gameinfo
+						tbl.gameinfo_path = path
+						tbl.game_dir = game_dir
+						tbl.vdf_directory = dir
+						list.insert(gameinfos, tbl)
+					end
+				end
+			end
+		end
+
+		return gameinfos
+	end
+
+	for _, tbl in ipairs(collect_gameinfos()) do
+		if not tbl.filesystem.steamappid or not done[tbl.filesystem.steamappid] then
+			if tbl.filesystem.steamappid then
+				done[tbl.filesystem.steamappid] = true
+			end
+
+			local name = tbl.game
+
+			if tbl.title and tbl.title ~= name then
+				name = name .. " - " .. tbl.title
+			end
+
+			if tbl.title and tbl.title2 and tbl.title2 ~= tbl.title then
+				name = name .. " - " .. tbl.title2
+			end
+
+			tbl.name = name
+			local gameinfo = tbl
+
+			if tbl.filesystem then
+				local fixed = {}
+				local done = {}
+
+				for _, v in pairs(tbl.filesystem.searchpaths) do
+					local vdf_directory = tbl.vdf_directory
+					local tbl = type(v) == "string" and {v} or v
+
+					for _, path in pairs(tbl) do
+						if path:find("|", nil, true) then
+							path = path:replace("|gameinfo_path|", game_info_dir)
+							path = path:replace("|all_source_engine_paths|", dir)
+						else
+							path = vdf_directory .. path
+						end
+
+						path = vfs.FixPathSlashes(path)
+
+						if path:ends_with("*") then
+							if not done[path] then
+								list.insert(fixed, path)
+								done[path] = true
+							end
+						else
+							if path:ends_with(".") then path = path:sub(0, -2) end
+
+							if path:ends_with("/") then
+								local test = path .. "/"
+
+								if vfs.IsDirectory(test) then
+									if not done[test] then
+										list.insert(fixed, test)
+										done[test] = true
+									end
+								end
+							else
+								local test = path .. "/"
+
+								if vfs.IsDirectory(test) then
+									if not done[test] then
+										list.insert(fixed, test)
+										done[test] = true
+									end
+								end
+
+								local test = path .. "/pak01_dir.vpk/"
+
+								if vfs.IsDirectory(test) then
+									if not done[test] then
+										list.insert(fixed, test)
+										done[test] = true
+									end
+								end
+
+								local test = gameinfo.game_dir .. path
+
+								if not vfs.IsDirectory(path) and vfs.IsDirectory(test) then
+									if not done[test] then
+										list.insert(fixed, test)
+										done[test] = true
+									end
+								end
+
+								if test:ends_with(".vpk") and not vfs.IsFile("os:" .. test) then
+									local path = test:gsub("(.+/.+)%.vpk", "%1_dir.vpk") .. "/"
+
+									if not done[path] then
+										list.insert(fixed, path)
+										done[path] = true
+									end
+								end
+							end
+
+							if path:ends_with(".vpk") and not vfs.IsFile("os:" .. path) then
+								local path = path:gsub("(.+/.+)%.vpk", "%1_dir.vpk") .. "/"
+
+								if not done[path] then
+									list.insert(fixed, path)
+									done[path] = true
+								end
+							end
+						end
+					end
+				end
+
+				-- utility.VDFToTable does not support ordered keys.
+				-- lets just prioritize vpk in the meantime
+				local sorted = {}
+
+				for _, v in ipairs(fixed) do
+					if v:ends_with(".vpk/") then list.insert(sorted, v) end
+				end
+
+				for _, v in ipairs(fixed) do
+					if not v:ends_with(".vpk/") then list.insert(sorted, v) end
+				end
+
+				tbl.filesystem.searchpaths = sorted
+				list.insert(found, tbl)
 			end
 		end
 	end
 
 	serializer.WriteFile("msgpack", "cache/source_games", found)
-
 	return found
 end
 
@@ -307,17 +374,17 @@ do
 
 	function steam.IsSourceGameMounted(var)
 		local game_info, err = steam.FindSourceGame(var)
+
 		if not game_info then return nil, err end
 
-		if cache_mounted[game_info.filesystem.steamappid] then
-			return true
-		end
+		if cache_mounted[game_info.filesystem.steamappid] then return true end
 
 		return false
 	end
 
-	function steam.MountSourceGame(var)
+	function steam.MountSourceGame(var, skip_addons)
 		local game_info, err = steam.FindSourceGame(var)
+
 		if not game_info then return nil, err end
 
 		if cache_mounted[game_info.filesystem.steamappid] then
@@ -328,17 +395,25 @@ do
 		steam.UnmountSourceGame(game_info)
 
 		for _, path in ipairs(game_info.filesystem.searchpaths) do
-			if path:endswith("*") then
+			if path:ends_with("*") then
 				for _, path in ipairs(vfs.Find(path:sub(0, -2), true)) do
 					if vfs.IsDirectory(path) then
-						if game_info.game == "Garry's Mod" and not pvars.Get("gine_local_addons_only") then
+						if
+							game_info.game == "Garry's Mod" and
+							not pvars.Get("gine_local_addons_only")
+							and
+							not skip_addons
+						then
 							llog("mounting %s", path)
 							vfs.Mount(path, nil, game_info)
+						else
+
+						--llog("NOT mounting %s", path)
 						end
 					end
 				end
 			else
-				if not path:endswith(".vpk/") then
+				if not path:ends_with(".vpk/") then
 					for _, v in ipairs(vfs.Find(path .. "/maps/workshop/")) do
 						llog("mounting workshop map %s", v)
 						vfs.Mount(path .. "/maps/workshop/" .. v, "maps/", game_info)
@@ -350,19 +425,33 @@ do
 			end
 		end
 
-		cache_mounted[game_info.filesystem.steamappid] = game_info
+		for _, lib_folder in ipairs(steam.GetLibraryFolders()) do
+			for _, path in ipairs(
+				vfs.Find(lib_folder .. "workshop/content/" .. game_info.filesystem.steamappid .. "/", true)
+			) do
+				if vfs.IsFile(path .. "/temp.gma") then
+					llog("mounting workshop addon %s", path)
+					vfs.Mount(path .. "/temp.gma", nil, game_info)
+				end
+			end
+		end
 
+		cache_mounted[game_info.filesystem.steamappid] = game_info
 		return game_info
 	end
 
 	function steam.UnmountSourceGame(var)
 		local game_info, err = steam.FindSourceGame(var)
+
 		if not game_info then return nil, err end
 
 		cache_mounted[game_info.filesystem.steamappid] = nil
 
 		for _, v in pairs(vfs.GetMounts()) do
-			if v.userdata and v.userdata.filesystem.steamappid == game_info.filesystem.steamappid then
+			if
+				v.userdata and
+				v.userdata.filesystem.steamappid == game_info.filesystem.steamappid
+			then
 				vfs.Unmount(v.full_where, v.full_to)
 			end
 		end
@@ -377,14 +466,16 @@ do
 	function steam.GetMountedSourceGames2()
 		local out = {}
 		local done = {}
-		for k,v in pairs(vfs.GetMounts()) do
+
+		for k, v in pairs(vfs.GetMounts()) do
 			if v.userdata and v.userdata.filesystem and v.userdata.filesystem.steamappid then
 				if not done[v.userdata] then
-					table.insert(out, v.userdata)
+					list.insert(out, v.userdata)
 					done[v.userdata] = true
 				end
 			end
 		end
+
 		return out
 	end
 end
@@ -434,12 +525,10 @@ local mount_info = {
 	["d%d_.+"] = {"half-life 2"},
 	["dm_.*"] = {"half-life 2: deathmatch"},
 	["c%dm%d_.+"] = {"left 4 dead 2"},
-
 	["esther"] = {"dear esther"},
 	["jakobson"] = {"dear esther"},
 	["donnelley"] = {"dear esther"},
 	["paul"] = {"dear esther"},
-
 	["aramaki_4d"] = {"team fortress 2", "garry's mod"},
 	["de_overpass"] = {"counter-strike: global offensive"},
 	["de_bank"] = {"counter-strike: global offensive"},
@@ -457,9 +546,10 @@ function steam.MountGamesFromMapPath(path)
 		local mounts = mount_info[name]
 
 		if not mounts then
-			for k,v in pairs(mount_info) do
+			for k, v in pairs(mount_info) do
 				if name:find(k) then
 					mounts = v
+
 					break
 				end
 			end
@@ -472,4 +562,3 @@ function steam.MountGamesFromMapPath(path)
 		end
 	end
 end
-

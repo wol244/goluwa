@@ -1,11 +1,21 @@
-ffibuild.Build({
-	name = "freetype",
-	url = "git://git.sv.nongnu.org/freetype/freetype2.git", -- --host=x86_64-w64-mingw32
-	cmd = "mkdir build && cd build && cmake .. -DBUILD_SHARED_LIBS=1 && make && cd ../",
-	addon = vfs.GetAddonFromPath(SCRIPT_PATH),
-	strip_undefined_symbols = true,
+ffibuild.Build(
+	{
+		name = "freetype",
+		linux = [[
+			FROM ubuntu:20.04
+			ARG DEBIAN_FRONTEND=noninteractive
+			ENV TZ=America/New_York
+			RUN apt-get update
+			RUN apt-get install -y git make cmake libx11-dev libpng-dev zlib1g-dev libbz2-dev libharfbuzz-dev tree libbrotli-dev
 
-	c_source = [[
+			WORKDIR /src
+			RUN git clone git://git.sv.nongnu.org/freetype/freetype2.git --depth 1 .
+			RUN mkdir build && cd build && cmake .. -DBUILD_SHARED_LIBS=1 && make --jobs 32
+
+		]],
+		addon = vfs.GetAddonFromPath(SCRIPT_PATH),
+		strip_undefined_symbols = true,
+		c_source = [[
 		#include <ft2build.h>
 
 		typedef struct _FT_Glyph_Class {} FT_Glyph_Class;
@@ -61,32 +71,46 @@ ffibuild.Build({
 		#include FT_GZIP_H
 		#include FT_ADVANCES_H
 	]],
-	gcc_flags = "-I./include",
-	process_header = function(header)
-		local meta_data = ffibuild.GetMetaData(header)
-		return meta_data:BuildMinimalHeader(function(name) return name:find("^FT_") end, function(name) return name:find("^FT_") or name:find("^BDF_") end, true, true)
-	end,
+		gcc_flags = "-I./include",
+		process_header = function(header)
+			local meta_data = ffibuild.GetMetaData(header)
+			return meta_data:BuildMinimalHeader(
+				function(name)
+					return name:find("^FT_")
+				end,
+				function(name)
+					return name:find("^FT_") or name:find("^BDF_")
+				end,
+				true,
+				true
+			)
+		end,
+		build_lua = function(header, meta_data)
+			local s = [=[
+				local ffi = require("ffi")
+				local CLIB = assert(ffi.load("freetype"))
+				ffi.cdef([[]=] .. header .. [=[]])
+			]=]
+			s = s .. "local library = " .. meta_data:BuildLuaFunctions("^FT_(.+)", "Foo_Bar", "FooBar")
+			s = s .. "library.e = " .. meta_data:BuildLuaEnums("^FT_(.+)")
+			s = s .. "local error_code_to_str = {\n"
 
-	build_lua = function(header, meta_data)
-		local lua = ffibuild.StartLibrary(header)
+			for _, enums in pairs(meta_data.global_enums) do
+				for _, enum in ipairs(enums.enums) do
+					local err = enum.key:match("^FT_Err_(.+)")
 
-		lua = lua .. "library = " .. meta_data:BuildFunctions("^FT_(.+)", "Foo_Bar", "FooBar")
-		lua = lua .. "library.e = " .. meta_data:BuildEnums("^FT_(.+)")
-		
-		lua = lua .. "local error_code_to_str = {\n"
-		
-		for _, enums in pairs(meta_data.global_enums) do
-			for _, enum in ipairs(enums.enums) do
-				local err = enum.key:match("^FT_Err_(.+)")
-				if err then
-				err = err:gsub("_", " "):lower()
-				lua = lua .. "\t[" .. enum.val .. "] = \"" .. err .. "\",\n"
+					if err then
+						err = err:gsub("_", " "):lower()
+						s = s .. "\t[" .. enum.val .. "] = \"" .. err .. "\",\n"
+					end
 				end
 			end
-		end
-		
-		lua = lua .. "}\n"
-		lua = lua .. "function library.ErrorCodeToString(code) return error_code_to_str[code] end\n"
-		return ffibuild.EndLibrary(lua)
-	end,
-})
+
+			s = s .. "}\n"
+			s = s .. "function library.ErrorCodeToString(code) return error_code_to_str[code] end\n"
+			s = s .. "library.clib = CLIB\n"
+			s = s .. "return library\n"
+			return s
+		end,
+	}
+)

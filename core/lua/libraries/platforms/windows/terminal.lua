@@ -1,13 +1,10 @@
 local ffi = require("ffi")
-
 local terminal = {}
-
 local STD_INPUT_HANDLE = -10
 local STD_OUTPUT_HANDLE = -11
 local ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200
 local DISABLE_NEWLINE_AUTO_RETURN = 0x0008
 local ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
-
 ffi.cdef([[
 	struct COORD {
 		short X;
@@ -133,20 +130,19 @@ ffi.cdef([[
 		uint16_t Attributes;
 	} CHAR_INFO;
 ]])
-
 local error_str = ffi.new("uint8_t[?]", 1024)
-local FORMAT_MESSAGE_FROM_SYSTEM = 0x00001000;
-local ENABLE_WINDOW_INPUT = 0x0008;
-local FORMAT_MESSAGE_IGNORE_INSERTS = 0x00000200;
+local FORMAT_MESSAGE_FROM_SYSTEM = 0x00001000
+local ENABLE_WINDOW_INPUT = 0x0008
+local FORMAT_MESSAGE_IGNORE_INSERTS = 0x00000200
 local error_flags = bit.bor(FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS)
 
 local function throw_error()
 	local code = ffi.C.GetLastError()
 	local numout = ffi.C.FormatMessageA(error_flags, nil, code, 0, error_str, 1023, nil)
 	local err = numout ~= 0 and ffi.string(error_str, numout)
-	if err and err:sub(-2) == "\r\n" then
-		return err:sub(0, -3)
-	end
+
+	if err and err:sub(-2) == "\r\n" then return err:sub(0, -3) end
+
 	return err
 end
 
@@ -160,79 +156,76 @@ local mode_flags = {
 	ENABLE_QUICK_EDIT_MODE = 0x0040,
 	ENABLE_WINDOW_INPUT = 0x0008,
 	ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200,
-
 	ENABLE_PROCESSED_OUTPUT = 0x0001,
 	ENABLE_WRAP_AT_EOL_OUTPUT = 0x0002,
 	ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004,
 	DISABLE_NEWLINE_AUTO_RETURN = 0x0008,
 	ENABLE_LVB_GRID_WORLDWIDE = 0x0010,
 }
-
 local stdin = ffi.C.GetStdHandle(STD_INPUT_HANDLE)
 local stdout = ffi.C.GetStdHandle(STD_OUTPUT_HANDLE)
-
 local old_flags = {}
 
 local function add_flags(handle, tbl)
-local ptr = ffi.C.GetStdHandle(handle)
+	local ptr = ffi.C.GetStdHandle(handle)
+
 	if ptr == nil then throw_error() end
 
 	local flags = ffi.new("uint16_t[1]")
-	if ffi.C.GetConsoleMode(ptr, flags) == 0 then
-		throw_error()
-	end
-	old_flags[handle] = tonumber(flags[0])
 
+	if ffi.C.GetConsoleMode(ptr, flags) == 0 then throw_error() end
+
+	old_flags[handle] = tonumber(flags[0])
 	flags[0] = utility.TableToFlags(tbl, mode_flags, function(out, val)
 		return bit.bor(out, val)
 	end)
 
-	if ffi.C.SetConsoleMode(ptr, flags[0]) == 0 then
-		throw_error()
-	end
+	if ffi.C.SetConsoleMode(ptr, flags[0]) == 0 then throw_error() end
 end
 
 function terminal.Initialize()
 	io.stdin:setvbuf("no")
 	io.stdout:setvbuf("no")
-
-	add_flags(STD_INPUT_HANDLE, {
-		--"ENABLE_PROCESSED_OUTPUT",
-		--"ENABLE_LINE_INPUT",
-		--"ENABLE_QUICK_EDIT_MODE",
-		--"ENABLE_EXTENDED_FLAGS",
-		--"ENABLE_WRAP_AT_EOL_OUTPUT",
-		--"ENABLE_PROCESSED_INPUT",
-		--"ENABLE_ECHO_INPUT",
-		--"ENABLE_VIRTUAL_TERMINAL_PROCESSING",
-		"ENABLE_INSERT_MODE",
-
+	add_flags(
+		STD_INPUT_HANDLE,
+		{
+			--"ENABLE_PROCESSED_OUTPUT",
+			--"ENABLE_LINE_INPUT",
+			--"ENABLE_QUICK_EDIT_MODE",
+			--"ENABLE_EXTENDED_FLAGS",
+			--"ENABLE_WRAP_AT_EOL_OUTPUT",
+			--"ENABLE_PROCESSED_INPUT",
+			--"ENABLE_ECHO_INPUT",
+			--"ENABLE_VIRTUAL_TERMINAL_PROCESSING",
+			"ENABLE_INSERT_MODE",
 		--"ENABLE_VIRTUAL_TERMINAL_INPUT", -- this seems broken to me
 		--"ENABLE_WINDOW_INPUT",
-	}, mode_flags)
-
-	add_flags(STD_OUTPUT_HANDLE, {
-		--"ENABLE_PROCESSED_OUTPUT",
-		"ENABLE_PROCESSED_INPUT",
-		--"ENABLE_WRAP_AT_EOL_OUTPUT",
-		--"ENABLE_LINE_INPUT",
-
-		"ENABLE_VIRTUAL_TERMINAL_PROCESSING",
+		},
+		mode_flags
+	)
+	add_flags(
+		STD_OUTPUT_HANDLE,
+		{
+			--"ENABLE_PROCESSED_OUTPUT",
+			"ENABLE_PROCESSED_INPUT",
+			--"ENABLE_WRAP_AT_EOL_OUTPUT",
+			--"ENABLE_LINE_INPUT",
+			"ENABLE_VIRTUAL_TERMINAL_PROCESSING",
 		--"DISABLE_NEWLINE_AUTO_RETURN"
 		--"DISABLE_NEWLINE_AUTO_RETURN",
-	}, mode_flags)
-
+		},
+		mode_flags
+	)
 	terminal.suppress_first = true
 	terminal.EnableCaret(true)
 end
 
 local function revert_flags(handle)
 	local ptr = ffi.C.GetStdHandle(handle)
+
 	if ptr == nil then throw_error() end
 
-	if ffi.C.SetConsoleMode(ptr, old_flags[handle]) == 0 then
-		throw_error()
-	end
+	if ffi.C.SetConsoleMode(ptr, old_flags[handle]) == 0 then throw_error() end
 end
 
 function terminal.Shutdown()
@@ -241,37 +234,44 @@ function terminal.Shutdown()
 end
 
 function terminal.EnableCaret(b)
-	if ffi.C.SetConsoleCursorInfo(stdout, ffi.new("struct CONSOLE_CURSOR_INFO[1]", {{dwSize = 100, bVisible = b and 1 or 0}})) ~= 0 then
-		--error(throw_error())
+	if
+		ffi.C.SetConsoleCursorInfo(
+			stdout,
+			ffi.new("struct CONSOLE_CURSOR_INFO[1]", {{dwSize = 100, bVisible = b and 1 or 0}})
+		) ~= 0
+	then
+
+	--error(throw_error())
 	end
 end
 
 function terminal.Write(str)
 	if terminal.writing then return end
+
 	terminal.writing = true
-	if terminal.OnWrite and terminal.OnWrite(str) ~= false then
-		io.write(str)
-	end
+
+	if terminal.OnWrite and terminal.OnWrite(str) ~= false then io.write(str) end
+
 	terminal.writing = false
 end
 
 function terminal.GetCaretPosition()
 	local out = ffi.new("struct CONSOLE_SCREEN_BUFFER_INFO[1]")
 	ffi.C.GetConsoleScreenBufferInfo(stdout, out)
-	return out[0].dwCursorPosition.X+1, out[0].dwCursorPosition.Y+1
+	return out[0].dwCursorPosition.X + 1, out[0].dwCursorPosition.Y + 1
 end
 
 function terminal.SetCaretPosition(x, y)
-	local w,h = terminal.GetSize()
-	x = math.clamp(math.floor(x)-1, 0, w)
-	y = math.clamp(math.floor(y)-1, 0, h)
+	local w, h = terminal.GetSize()
+	x = math.clamp(math.floor(x) - 1, 0, w)
+	y = math.clamp(math.floor(y) - 1, 0, h)
 	ffi.C.SetConsoleCursorPosition(stdout, ffi.new("struct COORD", {X = x, Y = y}))
 end
 
 function terminal.SetCaretPosition(x, y)
-    x = math.max(math.floor(x), 0)
-    y = math.max(math.floor(y), 0)
-    terminal.Write("\27[" .. y .. ";" .. x .. "f")
+	x = math.max(math.floor(x), 0)
+	y = math.max(math.floor(y), 0)
+	terminal.Write("\27[" .. y .. ";" .. x .. "f")
 end
 
 function terminal.WriteStringToScreen(x, y, str)
@@ -292,14 +292,18 @@ function terminal.GetSize()
 	return out[0].dwSize.X, out[0].dwSize.Y
 end
 
-function terminal.ForegroundColor(r,g,b)
+function terminal.ForegroundColor(r, g, b)
 	r = math.floor(r * 255)
 	g = math.floor(g * 255)
 	b = math.floor(b * 255)
 	terminal.Write("\27[38;2;" .. r .. ";" .. g .. ";" .. b .. "m")
 end
 
-function terminal.BackgroundColor(r,g,b)
+function terminal.ForegroundColorFast(r, g, b)
+	terminal.Write(string.format("\27[38;2;%i;%i;%im", r, g, b))
+end
+
+function terminal.BackgroundColor(r, g, b)
 	r = math.floor(r * 255)
 	g = math.floor(g * 255)
 	b = math.floor(b * 255)
@@ -307,16 +311,15 @@ function terminal.BackgroundColor(r,g,b)
 end
 
 function terminal.ResetColor()
-    terminal.Write("\27[0m")
+	terminal.Write("\27[0m")
 end
 
 local keys = {
-	MOD_ALT   =  0x0001,
-	MOD_CONTROL =  0x0002,
-	MOD_SHIFT     =  0x0004,
-	MOD_WIN       =  0x0008,
-	MOD_NOREPEAT  =  0x4000,
-
+	MOD_ALT = 0x0001,
+	MOD_CONTROL = 0x0002,
+	MOD_SHIFT = 0x0004,
+	MOD_WIN = 0x0008,
+	MOD_NOREPEAT = 0x4000,
 	VK_LBUTTON = 0x01,
 	VK_RBUTTON = 0x02,
 	VK_CANCEL = 0x03,
@@ -470,7 +473,6 @@ local keys = {
 	VK_PA1 = 0xFD,
 	VK_OEM_CLEAR = 0xFE,
 }
-
 local modifiers = {
 	CAPSLOCK_ON = 0x0080,
 	ENHANCED_KEY = 0x0100,
@@ -490,8 +492,10 @@ local function read()
 	if ffi.C.PeekConsoleInputA(stdin, rec, 128, events) == 0 then
 		error(throw_error())
 	end
+
 	if events[0] > 0 then
 		local rec = ffi.new("struct INPUT_RECORD[?]", events[0])
+
 		if ffi.C.ReadConsoleInputA(stdin, rec, events[0], events) == 0 then
 			error(throw_error())
 		end
@@ -500,86 +504,93 @@ local function read()
 			terminal.suppress_first = false
 			return
 		end
+
 		return rec, events[0]
 	end
 end
 
 terminal.event_buffer = {}
 
-function terminal.ReadEvent()
+function terminal.ReadEvents()
 	local events, count = read()
+
 	if events then
 		for i = 1, count do
 			local evt = events[i - 1]
+
 			--[[
 				print("==========================================================")
-				print("bKeyDown: ", evt.Event.KeyEvent.bKeyDown)
-				print("wRepeatCount: ", evt.Event.KeyEvent.wRepeatCount)
-				print("wVirtualKeyCode: ", evt.Event.KeyEvent.wVirtualKeyCode)
-				print("wVirtualScanCode: ", evt.Event.KeyEvent.wVirtualScanCode)
-				print("uChar UnicodeChar: ", evt.Event.KeyEvent.uChar.UnicodeChar)
-				print("uChar AsciiChar: ", evt.Event.KeyEvent.uChar.AsciiChar)
-				print("dwControlKeyState: ", evt.Event.KeyEvent.dwControlKeyState)
+				print(i, "bKeyDown: ", evt.Event.KeyEvent.bKeyDown)
+				print(i, "wRepeatCount: ", evt.Event.KeyEvent.wRepeatCount)
+				print(i, "wVirtualKeyCode: ", evt.Event.KeyEvent.wVirtualKeyCode)
+				print(i, "wVirtualScanCode: ", evt.Event.KeyEvent.wVirtualScanCode)
+				print(i, "uChar UnicodeChar: ", evt.Event.KeyEvent.uChar.UnicodeChar)
+				print(i, "uChar AsciiChar: ", evt.Event.KeyEvent.uChar.AsciiChar)
+				print(i, "dwControlKeyState: ", evt.Event.KeyEvent.dwControlKeyState)
+				print(i, "char: ", utf8.from_uint32(evt.Event.KeyEvent.uChar.UnicodeChar))
+				print(i, "mod: ", utility.FlagsToTable(evt.Event.KeyEvent.dwControlKeyState, modifiers))
+
 				print("==========================================================")
-			--]]
+			--]] if evt.EventType == 1 then
+				if evt.Event.KeyEvent.bKeyDown == 1 then
+					local str = utf8.from_uint32(evt.Event.KeyEvent.uChar.UnicodeChar)
+					local key = evt.Event.KeyEvent.wVirtualKeyCode
+					local mod = utility.FlagsToTable(evt.Event.KeyEvent.dwControlKeyState, modifiers)
+					--print(evt.Event.KeyEvent.uChar.UnicodeChar)
+					--for k,v in pairs(keys) do if v == key then print(k) end end
+					--table.print(mod)
+					local CTRL = mod.LEFT_CTRL_PRESSED or mod.RIGHT_CTRL_PRESSED
+					local SHIFT = mod.SHIFT_PRESSED or mod.SHIFT_PRESSED
 
-			if evt.Event.KeyEvent.bKeyDown == 1 then
-				local str = utf8.char(evt.Event.KeyEvent.uChar.UnicodeChar)
-				local key = evt.Event.KeyEvent.wVirtualKeyCode
-				local mod = utility.FlagsToTable(evt.Event.KeyEvent.dwControlKeyState, modifiers)
+					if
+						mod.SHIFT_PRESSED and
+						mod.LEFT_ALT_PRESSED and
+						evt.Event.KeyEvent.uChar.UnicodeChar == 68
+					then
+						CTRL = true
+						SHIFT = false
+						key = keys.VK_DELETE
+						mod.SHIFT_PRESSED = nil
+						mod.LEFT_ALT_PRESSED = nil
+					end
 
-				--print(evt.Event.KeyEvent.uChar.UnicodeChar)
-				--for k,v in pairs(keys) do if v == key then print(k) end end
-				--table.print(mod)
-				
-				local CTRL = mod.LEFT_CTRL_PRESSED or mod.RIGHT_CTRL_PRESSED
-				local SHIFT = mod.SHIFT_PRESSED or mod.SHIFT_PRESSED
-				
-				if mod.SHIFT_PRESSED and mod.LEFT_ALT_PRESSED and evt.Event.KeyEvent.uChar.UnicodeChar == 68 then
-					CTRL = true
-					SHIFT = false
-					key = keys.VK_DELETE
-					
-					mod.SHIFT_PRESSED = nil
-					mod.LEFT_ALT_PRESSED = nil
-				end
-
-				if SHIFT and evt.Event.KeyEvent.uChar.UnicodeChar ~= 0 then
-					table.insert(terminal.event_buffer, {"string", str})
-				else
-					if str == "\3" then
-						table.insert(terminal.event_buffer, {"ctrl_c"})
-					elseif CTRL then
-						if key == keys.VK_RIGHT then
-							table.insert(terminal.event_buffer, {"ctrl_right"})
-						elseif key == keys.VK_LEFT  then
-							table.insert(terminal.event_buffer, {"ctrl_left"})
-						elseif key == keys.VK_BACK or evt.Event.KeyEvent.uChar.UnicodeChar == 23 then
-							table.insert(terminal.event_buffer, {"ctrl_backspace"})
-						elseif key == keys.VK_DELETE or evt.Event.KeyEvent.uChar.UnicodeChar == 68 then
-							table.insert(terminal.event_buffer, {"ctrl_delete"})
-						end
+					if SHIFT and evt.Event.KeyEvent.uChar.UnicodeChar ~= 0 then
+						list.insert(terminal.event_buffer, {"string", str})
 					else
-						if key == keys.VK_RETURN then
-							table.insert(terminal.event_buffer, {"enter"})
-						elseif key == keys.VK_DELETE then
-							table.insert(terminal.event_buffer, {"delete"})
-						elseif key == keys.VK_LEFT then
-							table.insert(terminal.event_buffer, {"left"})
-						elseif key == keys.VK_RIGHT then
-							table.insert(terminal.event_buffer, {"right"})
-						elseif key == keys.VK_UP then
-							table.insert(terminal.event_buffer, {"up"})
-						elseif key == keys.VK_DOWN then
-							table.insert(terminal.event_buffer, {"down"})
-						elseif key == keys.VK_HOME then
-							table.insert(terminal.event_buffer, {"home"})
-						elseif key == keys.VK_END then
-							table.insert(terminal.event_buffer, {"end"})
-						elseif key == keys.VK_BACK then
-							table.insert(terminal.event_buffer, {"backspace"})
-						elseif evt.Event.KeyEvent.uChar.UnicodeChar > 31 then
-							table.insert(terminal.event_buffer, {"string", str})
+						if str == "\3" then
+							list.insert(terminal.event_buffer, {"ctrl_c"})
+						elseif CTRL then
+							if key == keys.VK_RIGHT then
+								list.insert(terminal.event_buffer, {"ctrl_right"})
+							elseif key == keys.VK_LEFT then
+								list.insert(terminal.event_buffer, {"ctrl_left"})
+							elseif key == keys.VK_BACK or evt.Event.KeyEvent.uChar.UnicodeChar == 23 then
+								list.insert(terminal.event_buffer, {"ctrl_backspace"})
+							elseif key == keys.VK_DELETE or evt.Event.KeyEvent.uChar.UnicodeChar == 68 then
+								list.insert(terminal.event_buffer, {"ctrl_delete"})
+							end
+						else
+							if key == keys.VK_RETURN then
+								list.insert(terminal.event_buffer, {"enter"})
+							elseif key == keys.VK_DELETE then
+								list.insert(terminal.event_buffer, {"delete"})
+							elseif key == keys.VK_LEFT then
+								list.insert(terminal.event_buffer, {"left"})
+							elseif key == keys.VK_RIGHT then
+								list.insert(terminal.event_buffer, {"right"})
+							elseif key == keys.VK_UP then
+								list.insert(terminal.event_buffer, {"up"})
+							elseif key == keys.VK_DOWN then
+								list.insert(terminal.event_buffer, {"down"})
+							elseif key == keys.VK_HOME then
+								list.insert(terminal.event_buffer, {"home"})
+							elseif key == keys.VK_END then
+								list.insert(terminal.event_buffer, {"end"})
+							elseif key == keys.VK_BACK then
+								list.insert(terminal.event_buffer, {"backspace"})
+							elseif evt.Event.KeyEvent.uChar.UnicodeChar > 31 then
+								list.insert(terminal.event_buffer, {"string", str})
+							end
 						end
 					end
 				end
@@ -587,9 +598,7 @@ function terminal.ReadEvent()
 		end
 	end
 
-	if terminal.event_buffer[1] then
-		return unpack(table.remove(terminal.event_buffer))
-	end
+	return terminal.event_buffer
 end
 
 return terminal

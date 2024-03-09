@@ -1,15 +1,20 @@
 @echo off
 SetLocal EnableDelayedExpansion
 
+if "%~1" == "_DL" (
+	call:DownloadFile "%~2" "%~3"
+	goto:eof
+)
+
 (set | find "ProgramFiles(x86)" > NUL) && (echo "!ProgramFiles(x86)!" | find "x86") > NUL && set ARCH=x64|| set ARCH=x86
 set OS=windows
-set APP_NAME=appexample
 set ARG_LINE=%*
-set STORAGE_PATH=storage
-set BINARY_DIR=!STORAGE_PATH!\bin\!OS!_!ARCH!
+set BRANCH=develop
+set BINARY_DIR=core\bin\!OS!_!ARCH!
 set BINARY_NAME=luajit.exe
-set BASE_BINARY_URL=https://gitlab.com/CapsAdmin/goluwa-binaries-!OS!_!ARCH!/raw/master/
-set BASE_SCRIPT_URL=https://gitlab.com/CapsAdmin/goluwa/raw/master/
+set BASE_BINARY_URL=https://gitlab.com/CapsAdmin/goluwa-binaries/raw/master/core/bin/!OS!_!ARCH!/
+set BASE_SCRIPT_URL=https://gitlab.com/CapsAdmin/goluwa/raw/!BRANCH!/
+set HTTP_TUNNEL=http://80.203.97.200:4123/
 set SCRIPT_PATH=core/lua/boot.lua
 
 IF %0 == "%~0" set RAN_FROM_FILEBROWSER=1
@@ -34,7 +39,6 @@ SetLocal
 
 	if not exist "!BINARY_DIR!\lua_downloaded_and_validated" (
 		call:DownloadFile "!BASE_BINARY_URL!lua51.dll" "!BINARY_DIR!\lua51.dll"
-		call:DownloadFile "!BASE_BINARY_URL!vcruntime140.dll" "!BINARY_DIR!\vcruntime140.dll"
 	)
 
 	if not exist "!BINARY_DIR!\!BINARY_NAME!" (
@@ -45,11 +49,11 @@ SetLocal
         call:DownloadFile "!BASE_SCRIPT_URL!!SCRIPT_PATH!" "!SCRIPT_PATH!"
     )
 
-	set GOLUWA_STORAGE_PATH=!STORAGE_PATH!
 	set "GOLUWA_ARG_LINE=!ARG_LINE!"
 	set GOLUWA_SCRIPT_PATH=!SCRIPT_PATH!
 	set GOLUWA_RAN_FROM_FILEBROWSER=!RAN_FROM_FILEBROWSER!
 	set GOLUWA_BINARY_DIR=!BINARY_DIR!
+	set GOLUWA_BRANCH=!BRANCH!
 
 	set "cmd_line=!BINARY_DIR!\!BINARY_NAME! !SCRIPT_PATH!"
 
@@ -88,7 +92,7 @@ SetLocal
 			pause
 
 			EndLocal
-			goto Start
+			goto:eof
 		)
 
 		echo. 2>!directory!\lua_downloaded_and_validated
@@ -101,68 +105,74 @@ SetLocal
 	set url=%~1
 	set output_path=%~2
 
-	if not exist !SystemRoot!\System32\where.exe (
-		set tmp_name=!TEMP!\lua_one_click_jscript_download.js
-		del /F !tmp_name! 2>NUL
-		echo //test > !tmp_name!
-
-		if not exist !tmp_name! (
-			call:AlertBox "unable to create temp file !tmp_name! !" "error"
-			exit /b
-		)
-
-		set forward_slash_path=!output_path:\=/!
-
-		echo try { >> !tmp_name!
-		echo var req = new ActiveXObject^("Microsoft.XMLHTTP"^) >> !tmp_name!
-		echo req.Open^("GET","!url!",false^) >> !tmp_name!
-		echo req.Send^(^) >> !tmp_name!
-
-		echo var stream = new ActiveXObject^("ADODB.Stream"^) >> !tmp_name!
-		echo stream.Type = 1 >> !tmp_name!
-		echo stream.Open^(^) >> !tmp_name!
-		echo stream.Write^(req.responseBody^) >> !tmp_name!
-		echo stream.SaveToFile^("!forward_slash_path!", 2^) >> !tmp_name!
-		echo stream.Close^(^) >> !tmp_name!
-		echo } catch^(err^) { >> !tmp_name!
-		echo 	WScript.Echo^("jscript error: "+err.message^) >> !tmp_name!
-		echo 	WScript.Quit^(1^) >> !tmp_name!
-		echo } >> !tmp_name!
-
-		cscript /Nologo /E:JScript !tmp_name!
-
-		if !errorlevel! neq 0 (
-			call:AlertBox "failed to execute JScript to download file" "error"
-			goto:eof
-		)
-
-		del /F !tmp_name! 2>NUL
-
+	if "%windir%" == "C:\ReactOS" (
+		echo "!url!"
+		echo "!output_path!"
+		dwnl "!url!" "!output_path!"
 	) else (
-		where curl
-		if !errorlevel! equ 0 (
-			curl -L --url "!url!" --output "!output_path!"
+		if not exist !SystemRoot!\System32\where.exe (
+			set tmp_name=!TEMP!\lua_one_click_jscript_download.js
+			del /F !tmp_name! 2>NUL
+			echo //test > !tmp_name!
 
-			if !errorlevel! neq 0 (
-				call:AlertBox "curl failed to execute with error code !errorlevel!" "error"
+			if not exist !tmp_name! (
+				call:AlertBox "unable to create temp file !tmp_name! !" "error"
+				exit /b
 			)
 
-			goto:eof
+			set forward_slash_path=!output_path:\=/!
+
+			echo try { >> !tmp_name!
+			echo var req = new ActiveXObject^("Microsoft.XMLHTTP"^) >> !tmp_name!
+			echo req.Open^("GET","!HTTP_TUNNEL!!url!",false^) >> !tmp_name!
+			echo req.Send^(^) >> !tmp_name!
+
+			echo var stream = new ActiveXObject^("ADODB.Stream"^) >> !tmp_name!
+			echo stream.Type = 1 >> !tmp_name!
+			echo stream.Open^(^) >> !tmp_name!
+			echo stream.Write^(req.responseBody^) >> !tmp_name!
+			echo stream.SaveToFile^("!forward_slash_path!", 2^) >> !tmp_name!
+			echo stream.Close^(^) >> !tmp_name!
+			echo } catch^(err^) { >> !tmp_name!
+			echo 	WScript.Echo^("jscript error: "+err.description^) >> !tmp_name!
+			echo 	WScript.Quit^(1^) >> !tmp_name!
+			echo } >> !tmp_name!
+
+			cscript /Nologo /E:JScript !tmp_name!
+
+			if !errorlevel! neq 0 (
+				call:AlertBox "failed to execute JScript to download file" "error"
+				goto:eof
+			)
+
+			del /F !tmp_name! 2>NUL
+
 		) else (
-			where powershell
+			where curl
 			if !errorlevel! equ 0 (
-				PowerShell -NoLogo -NoProfile -NonInteractive "(New-Object System.Net.WebClient).DownloadFile('!url!','!output_path!')"
+				curl -L --url "!url!" --output "!output_path!"
 
 				if !errorlevel! neq 0 (
-					call:AlertBox "powershell failed to execute with error code !errorlevel!" "error"
+					call:AlertBox "curl failed to execute with error code !errorlevel!" "error"
 				)
 
 				goto:eof
-			)
-		)
+			) else (
+				where powershell
+				if !errorlevel! equ 0 (
+					PowerShell -NoLogo -NoProfile -NonInteractive "(New-Object System.Net.WebClient).DownloadFile('!url!','!output_path!')"
 
-		call:AlertBox "unable to find curl or powershell"
-		exit /b
+					if !errorlevel! neq 0 (
+						call:AlertBox "powershell failed to execute with error code !errorlevel!" "error"
+					)
+
+					goto:eof
+				)
+			)
+
+			call:AlertBox "unable to find curl or powershell"
+			exit /b
+		)
 	)
 EndLocal
 goto:eof

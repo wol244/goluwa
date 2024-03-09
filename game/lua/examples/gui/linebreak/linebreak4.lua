@@ -1,21 +1,19 @@
-function string.midsplit(str)
-	local half = math.round(str:ulength()/2+1)
-	return str:usub(1, half-1), str:usub(half)
+function string.mid_split(str)
+	local half = math.round(str:utf8_length() / 2 + 1)
+	return str:utf8_sub(1, half - 1), str:utf8_sub(half)
 end
 
 local font = fonts.CreateFont({path = "fonts/vera.ttf", size = 25})
-
-local text = string.randomwords(500)
-
+local text = utility.BuildRandomWords(500)
 local boxes = {}
 
 for i, word in ipairs(text:split(" ")) do
 	local w, h = font:GetTextSize(word)
-	table.insert(boxes, {
+	list.insert(boxes, {
 		width = w,
-		word  = word,
+		word = word,
 	})
-	table.insert(boxes, {
+	list.insert(boxes, {
 		space = true,
 		width = font:GetTextSize(" "),
 		word = " ",
@@ -24,15 +22,13 @@ end
 
 local function additional_split(word, max_width, out)
 	out = out or {}
-
-	local left_word, right_word = word:midsplit()
-
+	local left_word, right_word = word:mid_split()
 	local left_width = font:GetTextSize(left_word)
 
-	if left_width >= max_width and left_word:ulength() > 1 then
+	if left_width >= max_width and left_word:utf8_length() > 1 then
 		additional_split(left_word, max_width, out)
 	else
-		table.insert(out, 1, {
+		list.insert(out, 1, {
 			width = left_width,
 			word = left_word,
 		})
@@ -40,10 +36,10 @@ local function additional_split(word, max_width, out)
 
 	local right_width = font:GetTextSize(right_word)
 
-	if right_width >= max_width and right_word:ulength() > 1 then
+	if right_width >= max_width and right_word:utf8_length() > 1 then
 		additional_split(right_word, max_width, out)
 	else
-		table.insert(out, 1, {
+		list.insert(out, 1, {
 			width = right_width,
 			word = right_word,
 		})
@@ -54,11 +50,12 @@ end
 
 local function layout(boxes, max_width, max_height)
 	for i, box in ipairs(boxes) do
-		if box.word:ulength() > 1 then
+		if box.word:utf8_length() > 1 then
 			if box.width > max_width then
-				table.remove(boxes, i)
+				list.remove(boxes, i)
+
 				for _, box in ipairs(additional_split(box.word, max_width)) do
-					table.insert(boxes, i, box)
+					list.insert(boxes, i, box)
 				end
 			end
 		end
@@ -78,26 +75,21 @@ local function layout(boxes, max_width, max_height)
 
 			box.x = x
 			box.y = y
-
 			x = x + box.width + try
 		end
-		if y+20 >= max_height then return end
+
+		if y + 20 >= max_height then return end
 	end
-
-
 end
 
 function goluwa.PreDrawGUI()
 	local w, h = gfx.GetMousePosition()
 	gfx.DrawLine(w, 0, w, select(2, render2d.GetSize()))
 	gfx.DrawLine(0, h, render2d.GetSize(), h)
-
 	local boxes = table.copy(boxes)
 	layout(boxes, w, h)
 
 	for i, box in ipairs(boxes) do
-		if not box.space then
-			font:DrawString(box.word, box.x, box.y)
-		end
+		if not box.space then font:DrawString(box.word, box.x, box.y) end
 	end
 end

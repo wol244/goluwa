@@ -1,29 +1,49 @@
-ffibuild.Build({
-	name = "vtflib",
-	url = "https://github.com/CapsAdmin/VTFLib.git",
-	cmd = "cmake . -DUSE_LIBTXC_DXTN=0 && make",
-	addon = vfs.GetAddonFromPath(SCRIPT_PATH),
+ffibuild.Build(
+	{
+		name = "vtflib",
+		addon = vfs.GetAddonFromPath(SCRIPT_PATH),
+		linux = [[
+			FROM ubuntu:20.04
 
-	c_source = [[
+			ARG DEBIAN_FRONTEND=noninteractive
+			ENV TZ=America/New_York
+
+			RUN apt-get update
+			RUN apt-get install -y git cmake g++
+		
+			WORKDIR /src
+			RUN git clone https://github.com/CapsAdmin/VTFLib.git --depth 1 .
+			RUN cmake . -DUSE_LIBTXC_DXTN=0 && make --jobs 32
+		]],
+		c_source = [[
 		typedef struct tagSVTFImageFormatInfo {} SVTFImageFormatInfo;
 		#include "VTFLib.h"
 		#include "VTFWrapper.h"
 		#include "VMTWrapper.h"
 	]],
-	gcc_flags = "-I./src",
-
-	process_header = function(header)
-		local meta_data = ffibuild.GetMetaData(header)
-
-		return meta_data:BuildMinimalHeader(function(name) return name:find("^vl") end, function(name) return true end, true, true)
-	end,
-
-	build_lua = function(header, meta_data)
-		local lua = ffibuild.StartLibrary(header)
-		lua = lua .. "library = " .. meta_data:BuildFunctions("^vl(.+)")
-		lua = lua .. "library.e = " .. meta_data:BuildEnums(nil,nil,nil,"^enum tagVTF")
-
-		lua = lua .. [[
+		gcc_flags = "-I./src",
+		process_header = function(header)
+			local meta_data = ffibuild.GetMetaData(header)
+			return meta_data:BuildMinimalHeader(
+				function(name)
+					return name:find("^vl")
+				end,
+				function(name)
+					return true
+				end,
+				true,
+				true
+			)
+		end,
+		build_lua = function(header, meta_data)
+			local s = [=[
+				local ffi = require("ffi")
+				local CLIB = assert(ffi.load("vtflib"))
+				ffi.cdef([[]=] .. header .. [=[]])
+			]=]
+			s = s .. "library = " .. meta_data:BuildLuaFunctions("^vl(.+)")
+			s = s .. "library.e = " .. meta_data:BuildLuaEnums(nil, nil, nil, "^enum tagVTF")
+			s = s .. [[
 
 
 		local function float(high, low)
@@ -174,7 +194,9 @@ ffibuild.Build({
 			}
 		end
 		]]
-
-		return ffibuild.EndLibrary(lua)
-	end,
-})
+			s = s .. "library.clib = CLIB\n"
+			s = s .. "return library\n"
+			return s
+		end,
+	}
+)

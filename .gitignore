@@ -1,8 +1,13 @@
 *
 
-.DS_Store
+**.DS_Store
 
 !/.gitignore
+
+!/.github/
+!/.github/**
+!/Dockerfile
+!/.dockerignore
 
 !/README.md
 !/goluwa.cmd
@@ -25,3 +30,4 @@
 */data/**
 
 *.directory
+

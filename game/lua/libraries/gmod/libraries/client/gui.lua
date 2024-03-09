@@ -4,6 +4,7 @@ do -- chatbox
 
 	function chat.AddText(...)
 		local tbl = {...}
+
 		for i, v in ipairs(tbl) do
 			if gine.env.IsColor(v) then
 				tbl[i] = ColorBytes(v.r, v.g, v.b, v.a)
@@ -11,6 +12,7 @@ do -- chatbox
 				tbl[i] = v.__obj
 			end
 		end
+
 		chathud.AddText(unpack(tbl))
 	end
 
@@ -24,17 +26,13 @@ do -- chatbox
 	end
 
 	function chat.GetChatBoxPos()
-		if lib.panel:IsValid() then
-			return lib.panel:GetPosition():Unpack()
-		end
+		if lib.panel:IsValid() then return lib.panel:GetPosition():Unpack() end
 
 		return 0, 0
 	end
 
 	function chat.GetChatBoxSize()
-		if lib.panel:IsValid() then
-			return lib.panel:GetSize():Unpack()
-		end
+		if lib.panel:IsValid() then return lib.panel:GetSize():Unpack() end
 
 		return 0, 0
 	end
@@ -45,6 +43,7 @@ do
 
 	function vgui.GetHoveredPanel()
 		local pnl = gui.GetHoveringPanel()
+
 		if pnl:IsValid() then
 			return gine.WrapObject(gui.GetHoveringPanel(), "Panel")
 		end
@@ -61,7 +60,11 @@ do
 	end
 
 	function vgui.CursorVisible()
-		return window.IsCursorVisible()
+		return window.GetCursor() ~= "trapped"
+	end
+
+	function vgui.GetWorldPanel()
+		return gine.WrapObject(gine.gui_world, "Panel")
 	end
 end
 
@@ -109,28 +112,28 @@ do
 	local function hook(obj, func_name, callback)
 		--print(obj, func_name, callback)
 		local old = obj[func_name]
+
 		if not old then
 			obj[func_name] = callback
 		else
-			obj[func_name] = function(z,x,c,v,b,n,m)
-				local a,b,c,d = callback(z,x,c,v,b,n,m)
-				if a ~= nil then
-					return a,b,c,d
-				end
-				return old(z,x,c,v,b,n,m)
+			obj[func_name] = function(z, x, c, v, b, n, m)
+				local a, b, c, d = callback(z, x, c, v, b, n, m)
+
+				if a ~= nil then return a, b, c, d end
+
+				return old(z, x, c, v, b, n, m)
 			end
 		end
 	end
 
 	local function vgui_Create(class, parent, name)
-
 		if not gine.gui_world:IsValid() then
 			gine.gui_world = gui.CreatePanel("base")
 			gine.gui_world:SetNoDraw(true)
 			gine.gui_world:SetIgnoreLayout(true)
-
 			--gine.gui_world:SetIgnoreMouse(true)
 			gine.gui_world.__class = "CGModBase"
+
 			function gine.gui_world:OnLayout()
 				self:SetPosition(Vec2(0, 0))
 				self:SetSize(window.GetSize())
@@ -138,7 +141,6 @@ do
 		end
 
 		class = class:lower()
-
 		local obj
 
 		if class == "textentry" then
@@ -148,7 +150,7 @@ do
 			obj.label.markup:SetPreserveTabsOnEnter(false)
 			--local draw_func = obj.label.OnPostDraw
 			obj.label.DrawTextEntryText = function() end
-			--obj.label.OnPostDraw = function() end
+		--obj.label.OnPostDraw = function() end
 		elseif class == "richtext" then
 			obj = gui.CreatePanel("scroll")
 			local markup = obj:CreatePanel("text", "text")
@@ -159,67 +161,84 @@ do
 		end
 
 		local self = gine.WrapObject(obj, "Panel")
-
 		obj:SetName("gmod_" .. name)
-
 		obj.gine_pnl = self
 		self.__class = class
-
-		obj.fg_color = Color(1,1,1,1)
-		obj.bg_color = Color(1,1,1,1)
+		obj.fg_color = Color(1, 1, 1, 1)
+		obj.bg_color = Color(1, 1, 1, 1)
 		obj.text_inset = Vec2()
 		obj.text_offset = Vec2()
 		obj.vgui_type = class
 		--self:SetPaintBackgroundEnabled(true)
 		obj:SetSize(Vec2(64, 24))
-		obj:SetPadding(Rect())
 		obj:SetMargin(Rect())
+		obj:SetPadding(Rect())
 		obj:ResetLayout()
---		obj:SetAllowKeyboardInput(false)
+		--		obj:SetAllowKeyboardInput(false)
 		obj:SetFocusOnClick(false)
 		obj:SetBringToFrontOnClick(false)
 		obj:SetClipping(true)
-
 		self:SetContentAlignment(4)
-
 		self:SetFontInternal("default")
-
 		self:MouseCapture(false)
-
 		self:SetParent(parent)
 
 		function self:ActionSignal() end
+
 		function self:ApplySchemeSettings() end
+
 		function self:FinishedURL() end
+
 		function self:Init() end
+
 		function self:OnChildAdded() end
+
 		function self:OnChildRemoved() end
+
 		function self:OnCursorEntered() end
+
 		function self:OnCursorExited() end
+
 		function self:OnCursorMoved() end
+
 		function self:OnFocusChanged() end
+
 		function self:OnKeyCodePressed() end
+
 		function self:OnKeyCodeReleased() end
+
 		function self:OnKeyCodeTyped() end
+
 		function self:OnMousePressed() end
+
 		function self:OnMouseReleased() end
+
 		function self:OnMouseWheeled() end
+
 		function self:OnDeletion() end
+
 		function self:OpeningURL() end
+
 		function self:PageTitleChanged() end
+
 		function self:Paint() end
+
 		function self:PaintOver() end
+
 		function self:PerformLayout() end
+
 		function self:ResourceLoaded() end
+
 		function self:StatusChanged() end
+
 		function self:Think() end
+
 		function self:OnGetFocus() end
+
 		function self:OnLoseFocus() end
 
 		obj.OnDraw = function()
-			if self.AnimationThink then
-				self:AnimationThink()
-			end
+			if self.AnimationThink then self:AnimationThink() end
 
 			if obj.draw_manual and not obj.in_paint_manual then return end
 
@@ -229,13 +248,12 @@ do
 			end
 
 			local w, h = obj:GetWidth(), obj:GetHeight()
-
 			local paint_bg = self:Paint(w, h)
 
 			if obj.paint_bg and paint_bg ~= nil then
 				render2d.SetTexture()
 				render2d.SetColor(obj.bg_color:Unpack())
-				render2d.DrawRect(0,0,obj.Size.x,obj.Size.y)
+				render2d.DrawRect(0, 0, obj.Size.x, obj.Size.y)
 			end
 
 			if class == "label" then
@@ -251,7 +269,11 @@ do
 
 					if obj.expensive_shadow_dir then
 						render2d.SetColor(obj.expensive_shadow_color:Unpack())
-						font:DrawString(text, obj.text_offset.x + obj.expensive_shadow_dir, obj.text_offset.y + obj.expensive_shadow_dir)
+						font:DrawString(
+							text,
+							obj.text_offset.x + obj.expensive_shadow_dir,
+							obj.text_offset.y + obj.expensive_shadow_dir
+						)
 					end
 
 					render2d.SetColor(obj.fg_color:Unpack())
@@ -267,18 +289,21 @@ do
 			end
 		end
 
-		obj:CallOnRemove(function() obj.marked_for_deletion = true self:OnDeletion() end)
+		obj:CallOnRemove(function()
+			obj.marked_for_deletion = true
+			self:OnDeletion()
+		end)
 
 		if class == "textentry" then
 			hook(obj, "OnCharInput", function(_, char)
-				if self.AllowInput then
-					return self:AllowInput(char)
-				end
+				if self.AllowInput then return self:AllowInput(char) end
 			end)
+
 			hook(obj, "OnTextChanged", function()
 				local text = self:GetText():gsub("\t", "")
+
 				if text ~= "" then
-					for _, char in ipairs(text:utotable()) do
+					for _, char in ipairs(text:utf8_to_list()) do
 						self.override_text = char
 						self:OnTextChanged()
 						self.override_text = nil
@@ -287,13 +312,32 @@ do
 			end)
 		end
 
-		hook(obj, "OnFocus", function() self:OnGetFocus() end)
-		hook(obj, "OnUnfocus", function() self:OnLoseFocus() end)
+		hook(obj, "OnFocus", function()
+			self:OnGetFocus()
+		end)
 
-		hook(obj, "OnUpdate", function() self:Think() self.thought_1_frame = true end)
-		hook(obj, "OnMouseMove", function(_, x, y) self:OnCursorMoved(x, y) end)
-		hook(obj, "OnMouseEnter", function() gine.env.ChangeTooltip(self) self:OnCursorEntered() end)
-		hook(obj, "OnMouseExit", function() gine.env.EndTooltip(self) self:OnCursorExited() end)
+		hook(obj, "OnUnfocus", function()
+			self:OnLoseFocus()
+		end)
+
+		hook(obj, "OnUpdate", function()
+			self:Think()
+			self.thought_1_frame = true
+		end)
+
+		hook(obj, "OnMouseMove", function(_, x, y)
+			self:OnCursorMoved(x, y)
+		end)
+
+		hook(obj, "OnMouseEnter", function()
+			gine.env.ChangeTooltip(self)
+			self:OnCursorEntered()
+		end)
+
+		hook(obj, "OnMouseExit", function()
+			gine.env.EndTooltip(self)
+			self:OnCursorExited()
+		end)
 
 		hook(obj, "OnPostLayout", function()
 			local panel = obj
@@ -329,13 +373,11 @@ do
 					panel.text_offset.y = panel:GetHeight() - h
 				end
 
-				if w > panel:GetWidth() then
-					panel.text_offset.x = 0
-				end
+				if w > panel:GetWidth() then panel.text_offset.x = 0 end
 
 				panel.text_offset = panel.text_offset + panel.text_inset
-				--panel.text_offset.x = panel.text_offset.x + panel:GetPadding():GetLeft()
-				--panel.text_offset.y = panel.text_offset.y + panel:GetPadding():GetTop()
+			--panel.text_offset.x = panel.text_offset.x + panel:GetMargin():GetLeft()
+			--panel.text_offset.y = panel.text_offset.y + panel:GetMargin():GetTop()
 			end
 
 			if not obj.gine_prepared then
@@ -369,9 +411,7 @@ do
 		end)
 
 		function obj:IsInsideParent()
-			if self.popup then
-				return true
-			end
+			if self.popup then return true end
 
 			if
 				self.Position.x < self.Parent.Size.x and
@@ -386,7 +426,6 @@ do
 		end
 
 		obj.name_prepare = name
-
 		return self
 	end
 
@@ -400,13 +439,12 @@ do
 
 	function META:Prepare()
 		if self.__obj.name_prepare ~= self.ClassName then return end
+
 		if self.__obj.gine_prepared then return end
 
 		self.__obj.gine_prepared = true
 
-		if self.__obj.gine_prepare_layout then
-			self:InvalidateLayout()
-		end
+		if self.__obj.gine_prepare_layout then self:InvalidateLayout() end
 
 		hook(self.__obj, "OnChildAdd", function(_, child)
 			self:OnChildAdded(gine.WrapObject(child, "Panel"))
@@ -417,16 +455,21 @@ do
 		end)
 	end
 
+	function META:GetClassName()
+		return self.ClassName or ""
+	end
+
 	function META:IsMarkedForDeletion()
 		return self.__obj.marked_for_deletion
 	end
 
 	function META:__tostring()
-		return ("Panel: [name:Panel][class:%s][%s,%s,%s,%s]"):format(self.__class, self.x, self.y, self.w, self.h)
+		return (
+			"Panel: [name:Panel][class:%s][%s,%s,%s,%s]"
+		):format(self.__class, self.x, self.y, self.w, self.h)
 	end
 
 	function META:__index(key)
-
 		if key == "x" or key == "X" then
 			return self.__obj:GetPosition().x
 		elseif key == "y" or key == "Y" then
@@ -440,15 +483,12 @@ do
 		end
 
 		local val = rawget(META, key)
-		if val then
-			return val
-		end
+
+		if val then return val end
 
 		local base = rawget(self, "BaseClass")
 
-		if base then
-			return rawget(base, key)
-		end
+		if base then return rawget(base, key) end
 	end
 
 	function META:__newindex(k, v)
@@ -462,7 +502,6 @@ do
 	end
 
 	META.__eq = nil -- no need
-
 	function META:SetParent(panel)
 		if panel and panel:IsValid() and panel.__obj and panel.__obj:IsValid() then
 			self.__obj:SetParent(panel.__obj)
@@ -478,29 +517,33 @@ do
 	function META:GetChildren()
 		local children = {}
 
-		for k,v in pairs(self.__obj:GetChildren()) do
-			table.insert(children, gine.WrapObject(v, "Panel"))
+		for k, v in pairs(self.__obj:GetChildren()) do
+			list.insert(children, gine.WrapObject(v, "Panel"))
 		end
 
 		return children
+	end
+
+	function META:ChildCount()
+		return #self:GetChildren()
 	end
 
 	function META:GetChild(idx)
 		return self:GetChildren()[idx - 1]
 	end
 
-	function META:SetFGColor(r,g,b,a)
-		self.__obj.fg_color.r = r/255
-		self.__obj.fg_color.g = g/255
-		self.__obj.fg_color.b = b/255
-		self.__obj.fg_color.a = (a or 0)/255
+	function META:SetFGColor(r, g, b, a)
+		self.__obj.fg_color.r = r / 255
+		self.__obj.fg_color.g = g / 255
+		self.__obj.fg_color.b = b / 255
+		self.__obj.fg_color.a = (a or 0) / 255
 	end
 
-	function META:SetBGColor(r,g,b,a)
-		self.__obj.bg_color.r = r/255
-		self.__obj.bg_color.g = g/255
-		self.__obj.bg_color.b = b/255
-		self.__obj.bg_color.a = (a or 0)/255
+	function META:SetBGColor(r, g, b, a)
+		self.__obj.bg_color.r = r / 255
+		self.__obj.bg_color.g = g / 255
+		self.__obj.bg_color.b = b / 255
+		self.__obj.bg_color.a = (a or 0) / 255
 	end
 
 	function META:CursorPos()
@@ -512,10 +555,9 @@ do
 	end
 
 	function META:GetBounds()
-		local x,y = self:GetPos()
-		local w,h = self:GetSize()
-
-		return x,y,w,h
+		local x, y = self:GetPos()
+		local w, h = self:GetSize()
+		return x, y, w, h
 	end
 
 	function META:SetName(name)
@@ -523,11 +565,19 @@ do
 	end
 
 	function META:GetName(name)
-		return self.__obj.name
+		return self.__obj.name or ""
 	end
 
 	function META:IsVisible()
 		return self.__obj.Visible
+	end
+
+	function META:IsModal()
+		return false
+	end
+
+	function META:IsWorldClicker()
+		return false
 	end
 
 	function META:GetTable()
@@ -546,11 +596,11 @@ do
 		return panel.__obj:HasChild(self.__obj)
 	end
 
-	function META:DockPadding(left, top, right, bottom)
+	function META:DockMargin(left, top, right, bottom)
 		self.__obj:SetMargin(Rect(right, bottom, left, top))
 	end
 
-	function META:DockMargin(left, top, right, bottom)
+	function META:DockPadding(left, top, right, bottom)
 		self.__obj:SetPadding(Rect(left, top, right, bottom))
 	end
 
@@ -562,8 +612,7 @@ do
 		self.__obj:GlobalMouseCapture(b)
 	end
 
-	function META:SetKeyboardInputEnabled(b)
-		--self.__obj:SetAllowKeyboardInput(b)
+	function META:SetKeyboardInputEnabled(b) --self.__obj:SetAllowKeyboardInput(b)
 	end
 
 	function META:IsKeyboardInputEnabled()
@@ -578,10 +627,9 @@ do
 		return self.__obj:GetHeight()
 	end
 
-	function META:SetSize(w,h)
+	function META:SetSize(w, h)
 		w = tonumber(w)
 		h = tonumber(h) or w
-
 		self.__obj:SetSize(Vec2(w, h))
 		self.__obj.LayoutSize = Vec2(w, h)
 	end
@@ -599,13 +647,14 @@ do
 	end
 
 	function META:ScreenToLocal(x, y)
-		return self.__obj:WorldToLocal(Vec2(x,y)):Unpack()
+		return self.__obj:WorldToLocal(Vec2(x, y)):Unpack()
 	end
 
 	do
 		function META:SetFontInternal(font)
 			self.__obj.font_internal = font or "default"
 			local font = gine.render2d_fonts[self.__obj.font_internal:lower()]
+
 			if not font then
 				--llog("font ", self.__obj.font_internal, " does not exist")
 				self.__obj.font_internal = "default"
@@ -634,7 +683,7 @@ do
 	end
 
 	function META:SetAlpha(a)
-		self.__obj.DrawAlpha = (a/255) ^ 2
+		self.__obj.DrawAlpha = (a / 255) ^ 2
 		self.__obj.gmod_draw_alpha = a
 	end
 
@@ -645,15 +694,14 @@ do
 	function META:GetParent()
 		local parent = self.__obj:GetParent()
 
-		if parent:IsValid() then
-			return gine.WrapObject(parent, "Panel")
-		end
+		if parent:IsValid() then return gine.WrapObject(parent, "Panel") end
 
 		return nil
 	end
 
 	function META:InvalidateLayout(now)
 		if self.in_layout then return end
+
 		if now then
 			self.in_layout = true
 			self:ApplySchemeSettings()
@@ -669,27 +717,23 @@ do
 
 		if panel.vgui_type == "label" then
 			self.get_content_size = true
-			local w,h = self:GetTextSize()
+			local w, h = self:GetTextSize()
 			self.get_content_size = false
-			return w,h
+			return w, h
 		end
-
 
 		return panel:GetSizeOfChildren():Unpack()
 	end
 
 	function META:GetTextSize()
 		local panel = self.__obj
-
 		-- in gmod the text size isn't correct until next frame
 		--[[if panel.label_settext then
 			if panel.label_settext == system.GetFrameNumber() then
 				return 0, 0
 			end
 			panel.label_settext = nil
-		end]]
-
-		local font = gine.render2d_fonts[panel.font_internal:lower()]
+		end]] local font = gine.render2d_fonts[panel.font_internal:lower()]
 		local text = tostring(panel.text_internal or "")
 
 		if not self.get_content_size then
@@ -712,9 +756,12 @@ do
 	function META:SizeToContents()
 		local panel = self.__obj
 
-		if panel.vgui_type == "label" or self.__obj.vgui_type == "textentry" or self.__obj.vgui_type == "richtext" then
+		if
+			panel.vgui_type == "label" or
+			self.__obj.vgui_type == "textentry" or
+			self.__obj.vgui_type == "richtext"
+		then
 			local w, h = self:GetContentSize()
-
 			--panel:Layout(true)
 			panel:SetSize(Vec2(panel.text_inset.x + w, panel.text_inset.y + h))
 			panel.LayoutSize = panel:GetSize():Copy()
@@ -722,9 +769,8 @@ do
 	end
 
 	function META:GetValue()
-		if self.override_text then
-			return self.override_text
-		end
+		if self.override_text then return self.override_text end
+
 		return self:GetText()
 	end
 
@@ -734,6 +780,7 @@ do
 		elseif self.__obj.vgui_type == "label" then
 			return self.__obj.text_internal
 		end
+
 		return ""
 	end
 
@@ -742,8 +789,13 @@ do
 		self.__obj.text_inset.y = y
 	end
 
+	function META:GetTextInset()
+		return self.__obj.text_inset.x, self.__obj.text_inset.y
+	end
+
 	function META:SizeToChildren(size_w, size_h)
 		if size_w == nil then size_w = true end
+
 		if size_h == nil then size_h = true end
 
 		--[[
@@ -760,21 +812,19 @@ do
 				v.Size = Vec2(w, h)
 			end
 		end
-]]
-		if size_w and size_h then
+]] if size_w and size_h then
 			self.__obj:SizeToChildren()
 		elseif size_w then
 			self.__obj:SizeToChildrenWidth()
 		elseif size_h then
 			self.__obj:SizeToChildrenHeight()
 		end
---[[
+	--[[
 		for _, v in ipairs(self.__obj.Children) do
 			v.Size = v.old_size
 		end
 
-		self.__obj.LayoutSize = self.__obj.Size:Copy()]]
-	end
+		self.__obj.LayoutSize = self.__obj.Size:Copy()]] end
 
 	function META:SetVisible(b)
 		self.__obj:SetVisible(b)
@@ -794,6 +844,7 @@ do
 		elseif enum == gine.env.NODOCK then
 			self.__obj:SetupLayout()
 		end
+
 		self.__obj.vgui_dock = enum
 	end
 
@@ -809,11 +860,14 @@ do
 		self.__obj.content_alignment = num
 		self.__obj:Layout()
 	end
+
 	function META:SetExpensiveShadow(dir, color)
 		self.__obj.expensive_shadow_dir = dir
 		self.__obj.expensive_shadow_color = ColorBytes(color.r, color.g, color.b, color.a)
 	end
+
 	function META:SetPaintBorderEnabled() end
+
 	function META:SetPaintBackgroundEnabled(b)
 		self.__obj.paint_bg = b
 	end
@@ -825,19 +879,17 @@ do
 
 	do -- z pos stuff
 		function META:SetZPos(pos)
+			pos = pos or 0
 			self.__obj:SetChildOrder(-pos)
 		end
 
-		function META:MoveToBack()
-			--self.__obj:Unfocus()
+		function META:MoveToBack() --self.__obj:Unfocus()
 		end
 
-		function META:MoveToFront()
-			--self.__obj:BringToFront()
+		function META:MoveToFront() --self.__obj:BringToFront()
 		end
 
 		--function META:SetFocusTopLevel() end
-
 		function META:MakePopup()
 			self.__obj:BringToFront()
 			self.__obj:RequestFocus()
@@ -860,20 +912,16 @@ do
 		end
 	end
 
-	function META:NoClipping(b)
+	function META:NoClipping(b) end
 
-	end
-
-	function META:ParentToHUD()
-
-	end
+	function META:ParentToHUD() end
 
 	function META:DrawFilledRect()
-		gine.env.surface.DrawRect(0,0,self:GetSize())
+		gine.env.surface.DrawRect(0, 0, self:GetSize())
 	end
 
 	function META:DrawOutlinedRect()
-		gine.env.surface.DrawOutlinedRect(0,0, self:GetSize())
+		gine.env.surface.DrawOutlinedRect(0, 0, self:GetSize())
 	end
 
 	function META:SetWrap(b)
@@ -881,30 +929,20 @@ do
 	end
 
 	--function META:SetWorldClicker() end
-
 	function META:SetAllowNonAsciiCharacters() end
-
 
 	do -- html
 		function META:IsLoading()
 			return true
 		end
 
-		function META:NewObject(obj)
+		function META:NewObject(obj) end
 
-		end
+		function META:NewObjectCallback(obj, func) end
 
-		function META:NewObjectCallback(obj, func)
+		function META:OpenURL() end
 
-		end
-
-		function META:OpenURL()
-
-		end
-
-		function META:SetHTML()
-
-		end
+		function META:SetHTML() end
 	end
 
 	-- edit
@@ -923,7 +961,7 @@ do
 			if self.__obj.vgui_type == "textentry" then
 				self.__obj:SetCaretSubPosition(math.huge)
 			elseif self.__obj.vgui_type == "richtext" then
-				self.__obj:SetScrollFraction(Vec2(0,1))
+				self.__obj:SetScrollFraction(Vec2(0, 1))
 			end
 		end
 
@@ -931,21 +969,19 @@ do
 			if self.__obj.vgui_type == "textentry" then
 				self.__obj:SetCaretSubPosition(0)
 			elseif self.__obj.vgui_type == "richtext" then
-				self.__obj:SetScrollFraction(Vec2(0,0))
+				self.__obj:SetScrollFraction(Vec2(0, 0))
 			end
 		end
 
-		function META:SetVerticalScrollbarEnabled(b)
-
-		end
+		function META:SetVerticalScrollbarEnabled(b) end
 
 		function META:AppendText(str)
 			str = gine.translation2[str] or str
 			self.__obj.text.markup:AddString(str)
 		end
 
-		function META:InsertColorChange(r,g,b,a)
-			self.__obj.text.markup:AddColor(ColorBytes(r,g,b,a))
+		function META:InsertColorChange(r, g, b, a)
+			self.__obj.text.markup:AddColor(ColorBytes(r, g, b, a))
 		end
 
 		function META:DrawTextEntryText(text_color, highlight_color, cursor_color)
@@ -971,10 +1007,9 @@ do
 
 	function META:HasHierarchicalFocus()
 		for _, pnl in ipairs(self.__obj:GetChildrenList()) do
-			if pnl.IsFocused and pnl:IsFocused() then
-				return true
-			end
+			if pnl.IsFocused and pnl:IsFocused() then return true end
 		end
+
 		return false
 	end
 
@@ -985,11 +1020,12 @@ do
 	do
 		local in_drawing
 
-		function META:PaintAt(x,y,w,h)
+		function META:PaintAt(x, y, w, h)
 			if in_drawing then return end
+
 			self.__obj.in_paint_manual = true
 			in_drawing = true
-			render2d.PushMatrix(x,y,w,h)
+			render2d.PushMatrix(x, y, w, h)
 			self.__obj:OnDraw()
 			render2d.PopMatrix()
 			in_drawing = false
@@ -998,6 +1034,7 @@ do
 
 		function META:PaintManual()
 			if in_drawing then return end
+
 			self.__obj.in_paint_manual = true
 			in_drawing = true
 			self.__obj:OnDraw()
@@ -1011,10 +1048,14 @@ do
 	end
 
 	function META:SetSteamID(id, size)
-		do return end
-		http.Get("http://steamcommunity.com/id/"..id.."/?xml=1", function(data)
+		do
+			return
+		end
+
+		http.Get("http://steamcommunity.com/id/" .. id .. "/?xml=1", function(data)
 			local url = data.content:match("<avatarFull>(.-)</avatarFull>")
 			url = url and url:match("%[(http.-)%]")
+
 			if url then
 				self:SetTexture(Texture(url))
 			else
@@ -1027,6 +1068,7 @@ do
 		if self.__obj.vgui_type == "textentry" then
 			self:SetKeyboardInputEnabled(true)
 		end
+
 		self.__obj:RequestFocus()
 	end
 
@@ -1034,7 +1076,7 @@ do
 		if self.__obj.vgui_type == "textentry" then
 			self.__obj:SetMultiline(b)
 		elseif self.__obj.vgui_type == "richtext" then
-			self.__obj.text:SetMultiline(b)
+			self.__obj.text:SetTextWrap(b)
 		end
 	end
 
@@ -1042,28 +1084,19 @@ do
 		if self.__obj.vgui_type == "textentry" then
 			return self.__obj:GetMultiline()
 		elseif self.__obj.vgui_type == "richtext" then
-			return self.__obj.text:GetMultiline()
+			return self.__obj.text:GetTextWrap()
 		end
 	end
 
-	function META:SetFocusTopLevel()
+	function META:SetFocusTopLevel() end
 
-	end
-
-	function META:SetDrawLanguageIDAtLeft()
-
-	end
-
+	function META:SetDrawLanguageIDAtLeft() end
 
 	function META:DoModal()
 		self.__obj:RequestFocus()
 	end
 
-	function META:SetWorldClicker()
+	function META:SetWorldClicker() end
 
-	end
-
-	function META:FocusNext()
-
-	end
+	function META:FocusNext() end
 end

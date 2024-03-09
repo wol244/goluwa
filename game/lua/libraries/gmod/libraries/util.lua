@@ -1,12 +1,19 @@
 local util = gine.env.util
 
+function util.FilterText(str, context, ply)
+	return str
+end
+
 function util.KeyValuesToTable(str)
 	local tbl, ok = utility.VDFToTable(str, true)
+
 	if not tbl then
 		llog(ok)
 		return {}
 	end
+
 	local key, val = next(tbl)
+	print(str, key, val, "?!?!")
 	return val
 end
 
@@ -16,11 +23,16 @@ end
 
 function util.RelativePathToFull(path)
 	if path == "." then path = "" end
+
 	return R(path) or ""
 end
 
 function util.JSONToTable(str)
-	return serializer.Decode("json", str)
+	local ok, res = pcall(serializer.Decode, "json", str)
+
+	if ok then return res end
+
+	wlog(res)
 end
 
 function util.TableToJSON(tbl)
@@ -33,6 +45,10 @@ end
 
 function util.IsValidModel(path)
 	return vfs.IsFile(path)
+end
+
+function util.IsValidRagdoll(ent)
+	return false
 end
 
 function util.PointContents()
@@ -49,4 +65,19 @@ end
 
 function gine.env.WorldToLocal()
 	return gine.env.Vector(), gine.env.Angle()
+end
+
+function util.GetSunInfo()
+	return {
+		direction = gine.env.Vector(0, 0, 1),
+		obstruction = 0,
+	}
+end
+
+function util.GetPixelVisibleHandle()
+	return {}
+end
+
+function util.PixelVisible(pos, radius, handle)
+	return 1
 end

@@ -1,25 +1,23 @@
 local start_time = os.clock()
-
 local session_id = os.getenv("GOLUWA_TMUX_SESSION_ID") or "goluwa"
+local ffi = require("ffi")
 
 do
 	_G[jit.os:upper()] = true
 	_G.OS = jit.os:lower()
-
 	_G[jit.arch:upper()] = true
 	_G.ARCH = jit.arch:lower()
-
 	UNIX = not WINDOWS
-
 	ARCHIVE_EXT = WINDOWS and ".zip" or ".tar.gz"
 	SHARED_LIBRARY_EXT = UNIX and ".so" or ".dll"
 
-	local ffi = require("ffi")
+	if OSX then SHARED_LIBRARY_EXT = ".dylib" end
 
 	function absolute_path(path)
 		if not path:find(os.getcd(), 1, true) then
 			path = os.getcd() .. "/" .. path
 		end
+
 		return path
 	end
 
@@ -28,39 +26,21 @@ do
 	end
 
 	if WINDOWS then
-		function powershell(str, no_return)
-			os.setenv("pstemp", str)
-			local ps = "powershell -nologo -noprofile -noninteractive -command Invoke-Expression $Env:pstemp"
-
-			if no_return then
-				os.execute(ps)
-				return
-			end
-
-			local p = io.popen(ps)
-			local out = p:read("*all")
-			p:close()
-
-			return out
+		function jscript(str)
+			local tmp_name = os.getenv("TEMP") .. "\\lua_one_click_jscript_download.js"
+			local f = assert(io.open(tmp_name, "wb"))
+			f:write(str)
+			f:close()
+			os.execute("cscript /Nologo /E:JScript " .. tmp_name)
+			os.remove(tmp_name)
 		end
 	end
 
 	function os.readexecute(cmd)
-		local p = io.popen(cmd)
+		local p = assert(io.popen(cmd))
 		str = p:read("*all")
 		p:close()
 		return str
-	end
-
-	function os.checkexecute(cmd)
-		local code
-		if UNIX then
-			code = os.readexecute(cmd .. " && printf %s $?")
-		else
-			code = os.readexecute(cmd .. " & echo %errorlevel%")
-		end
-
-		return code:sub(#code ) == "0"
 	end
 
 	do
@@ -68,12 +48,15 @@ do
 
 		function os.iscmd(cmd)
 			if cache[cmd] ~= nil then return cache[cmd] end
+
 			local res
+
 			if WINDOWS then
 				res = os.readexecute("WHERE " .. cmd .. " 2>nul") ~= ""
 			else
 				res = os.readexecute("command -v " .. cmd) ~= ""
 			end
+
 			cache[cmd] = res
 			return res
 		end
@@ -85,7 +68,7 @@ do
 		if UNIX then
 			os.execute("rm -rf \"" .. path .. "\"")
 		else
-			powershell("Remove-Item -Recurse -Force \"" .. path .. "\"")
+			os.execute("rmdir /Q /S \"" .. winpath(path) .. "\"")
 		end
 	end
 
@@ -94,6 +77,7 @@ do
 		b = absolute_path(b)
 
 		if a:sub(#a, #a) ~= "/" then a = a .. "/" end
+
 		if b:sub(#b, #b) ~= "/" then b = b .. "/" end
 
 		if WINDOWS then
@@ -135,26 +119,23 @@ do
 	if UNIX then
 		function os.ls(path)
 			path = absolute_path(path)
-
 			local out = {}
+
 			for dir in os.readexecute("for dir in " .. path .. "*; do printf \"%s\n\" \"${dir}\"; done"):gmatch("(.-)\n") do
-				table.insert(out, dir:sub(#path + 1))
+				list.insert(out, dir:sub(#path + 1))
 			end
 
 			return out
 		end
 	else
 		function os.ls(path)
-			if path:sub(#path, #path) ~= "/" then
-				path = path .. "/"
-			end
+			if path:sub(#path, #path) ~= "/" then path = path .. "/" end
 
 			path = absolute_path(path)
-
 			local out = {}
 
 			for name in os.readexecute("dir \"" .. winpath(path) .. "\" /B"):gmatch("(.-)\n") do
-				table.insert(out, name)
+				list.insert(out, name)
 			end
 
 			return out
@@ -176,34 +157,21 @@ do
 		end
 	else
 		ffi.cdef([[
-			int _putenv_s(const char *var_name, const char *new_value);
-			int _putenv(const char *var_name);
+			int SetEnvironmentVariableA(const char *key, const char *val);
 		]])
 
 		function os.setenv(key, val)
-			if not val then
-				ffi.C._putenv(key)
-			else
-				ffi.C._putenv_s(key, val)
-			end
+			ffi.C.SetEnvironmentVariableA(key, val or nil)
 		end
-	end
-
-	function os.appendenv(key, val)
-		os.setenv(key, (os.getenv(key) or "") .. val)
-	end
-
-	function os.prependenv(key, val)
-		os.setenv(key, val .. (os.getenv(key) or ""))
 	end
 
 	if UNIX then
 		function os.pathtype(path)
 			path = absolute_path(path)
 
-			if os.readexecute('[ -d "'..path..'" ] && printf "1"') == "1" then
+			if os.readexecute("[ -d \"" .. path .. "\" ] && printf \"1\"") == "1" then
 				return "directory"
-			elseif os.readexecute('[ -f "'..path..'" ] && printf "1"') == "1" then
+			elseif os.readexecute("[ -f \"" .. path .. "\" ] && printf \"1\"") == "1" then
 				return "file"
 			end
 
@@ -226,34 +194,14 @@ do
 			} goluwa_file_attributes;
 			bool GetFileAttributesExA(const char*, int, goluwa_file_attributes*);
 		]])
-
-		local flags = {
-			archive = 0x20, -- A file or directory that is an archive file or directory. Applications typically use this attribute to mark files for backup or removal .
-			compressed = 0x800, -- A file or directory that is compressed. For a file, all of the data in the file is compressed. For a directory, compression is the default for newly created files and subdirectories.
-			device = 0x40, -- This value is reserved for system use.
-			directory = 0x10, -- The handle that identifies a directory.
-			encrypted = 0x4000, -- A file or directory that is encrypted. For a file, all data streams in the file are encrypted. For a directory, encryption is the default for newly created files and subdirectories.
-			hidden = 0x2, -- The file or directory is hidden. It is not included in an ordinary directory listing.
-			integrity_stream = 0x8000, -- The directory or user data stream is configured with integrity (only supported on ReFS volumes). It is not included in an ordinary directory listing. The integrity setting persists with the file if it's renamed. If a file is copied the destination file will have integrity set if either the source file or destination directory have integrity set.
-			normal = 0x80, -- A file that does not have other attributes set. This attribute is valid only when used alone.
-			not_content_indexed = 0x2000, -- The file or directory is not to be indexed by the content indexing service.
-			no_scrub_data = 0x20000, -- The user data stream not to be read by the background data integrity scanner (AKA scrubber). When set on a directory it only provides inheritance. This flag is only supported on Storage Spaces and ReFS volumes. It is not included in an ordinary directory listing.
-			offline = 0x1000, -- The data of a file is not available immediately. This attribute indicates that the file data is physically moved to offline storage. This attribute is used by Remote Storage, which is the hierarchical storage management software. Applications should not arbitrarily change this attribute.
-			readonly = 0x1, -- A file that is read-only. Applications can read the file, but cannot write to it or delete it. This attribute is not honored on directories. For more information, see You cannot view or change the Read-only or the System attributes of folders in Windows Server 2003, in Windows XP, in Windows Vista or in Windows 7.
-			reparse_point = 0x400, -- A file or directory that has an associated reparse point, or a file that is a symbolic link.
-			sparse_file = 0x200, -- A file that is a sparse file.
-			system = 0x4, -- A file or directory that the operating system uses a part of, or uses exclusively.
-			temporary = 0x100, -- A file that is being used for temporary storage. File systems avoid writing data back to mass storage if sufficient cache memory is available, because typically, an application deletes a temporary file after the handle is closed. In that scenario, the system can entirely avoid writing the data. Otherwise, the data is written after the handle is closed.
-			virtual = 0x10000, -- This value is reserved for system use.
-		}
+		local directory_flag = 0x10
 
 		function os.pathtype(path)
 			path = absolute_path(path)
-
 			local info = ffi.new("goluwa_file_attributes[1]")
 
 			if ffi.C.GetFileAttributesExA(winpath(path), 0, info) then
-				if bit.band(info[0].dwFileAttributes, flags.directory) == flags.directory then
+				if bit.band(info[0].dwFileAttributes, directory_flag) == directory_flag then
 					return "directory"
 				end
 
@@ -262,8 +210,13 @@ do
 		end
 	end
 
-	function os.isdir(dir) return os.pathtype(dir) == "directory" end
-	function os.isfile(dir) return os.pathtype(dir) == "file" end
+	function os.isdir(dir)
+		return os.pathtype(dir) == "directory"
+	end
+
+	function os.isfile(dir)
+		return os.pathtype(dir) == "file"
+	end
 
 	if UNIX then
 		function os.makedir(dir)
@@ -273,6 +226,7 @@ do
 	else
 		ffi.cdef("int SHCreateDirectoryExA(void *,const char *path, void *);")
 		local lib = ffi.load("Shell32.dll")
+
 		function os.makedir(dir)
 			dir = absolute_path(dir)
 			return lib.SHCreateDirectoryExA(nil, winpath(dir), nil)
@@ -283,28 +237,17 @@ do
 		to = absolute_path(to)
 
 		if WINDOWS then
-			powershell([[
-				[Net.ServicePointManager]::Expect100Continue = {$true}
-
-				[System.Net.ServicePointManager]::SecurityProtocol =
-					[System.Net.SecurityProtocolType]::Tls11 -bor
-					[System.Net.SecurityProtocolType]::Tls12 -bor
-					[System.Net.SecurityProtocolType]::Tls13;
-
-				(New-Object System.Net.WebClient).DownloadFile(']] .. url .. [[', ']] .. winpath(to) .. [[')
-			]], true)
-			return os.isfile(to)
+			os.execute("goluwa.cmd _DL \"" .. url .. "\" \"" .. to .. "\"")
 		else
-			if os.iscmd("wget") then
-				return os.readexecute("wget -O \""..to.."\" \""..url.."\" && printf $?") == "0"
-			elseif os.iscmd("curl") then
-				return os.readexecute("curl -L --url \""..url.."\" --output \""..to.."\" && printf $?") == "0"
-			end
+			os.execute("./goluwa _DL \"" .. url .. "\" \"" .. to .. "\"")
 		end
+
+		return os.isfile(to)
 	end
 
 	if UNIX then
 		ffi.cdef("int chdir(const char *path);")
+
 		function os.cd(path)
 			path = absolute_path(path)
 
@@ -316,6 +259,7 @@ do
 		end
 	else
 		ffi.cdef("bool SetCurrentDirectoryA(const char *path);")
+
 		function os.cd(path)
 			path = absolute_path(path)
 
@@ -334,15 +278,9 @@ do
 		return str
 	end
 
-	function io.writefile(path, str)
-		local f = assert(io.open(path, "wb"))
-		f:write(str)
-		f:close()
-	end
-
 	function has_tmux_session()
 		if os.iscmd("tmux") then
-			return os.readexecute("tmux has-session -t "..session_id.." 2> /dev/null; printf $?") == "0"
+			return os.readexecute("tmux has-session -t " .. session_id .. " 2> /dev/null; printf $?") == "0"
 		end
 	end
 
@@ -350,36 +288,24 @@ do
 		from = absolute_path(from)
 		to = absolute_path(to)
 
-		if to:sub(#to, #to) ~= "/" then
-			to = to .. "/"
-		end
+		if to:sub(#to, #to) ~= "/" then to = to .. "/" end
 
 		local extract_dir = to .. "temp/"
-
 		os.makedir(extract_dir)
 
 		if UNIX then
-			os.readexecute('tar -xvzf ' .. from .. ' -C "' .. extract_dir .. '"')
+			os.readexecute("tar -xvzf " .. from .. " -C \"" .. extract_dir .. "\"")
 		else
-			powershell([[
-				$file = "]]..from:gsub("/", "\\")..[["
-				$location = "]]..extract_dir:gsub("/", "\\")..[["
+			jscript(
+				[[
+				var file = "]] .. from:gsub("/", "\\\\") .. [["
+				var location = "]] .. extract_dir:gsub("/", "\\\\") .. [["
 
-				$shell = New-Object -Com Shell.Application
+				var shell = new ActiveXObject("Shell.Application")
 
-				$zip = $shell.NameSpace("$file")
-
-				if (!$zip) {
-					Write-Error "could open zip archive $file!"
-				}
-				else
-				{
-					foreach($item in $zip.items()) {
-						Write-Host "extracting $($item.Name) -> $location"
-						$shell.Namespace("$location").CopyHere($item, 0x14)
-					}
-				}
-			]], true)
+				shell.NameSpace(location).CopyHere(shell.NameSpace(file).Items())
+			]]
+			)
 		end
 
 		if move_out then
@@ -387,27 +313,24 @@ do
 				move_out = move_out .. "/"
 			end
 
-			if move_out:sub(1, 1) ~= "/" then
-				move_out = "/" .. move_out
-			end
+			if move_out:sub(1, 1) ~= "/" then move_out = "/" .. move_out end
 
 			repeat
 				local ok = false
 				local str, count = move_out:gsub("(.-)/%*/(.*)", function(left, right)
-					for k,v in ipairs(os.ls(extract_dir .. left)) do
+					for k, v in ipairs(os.ls(extract_dir .. left)) do
 						ok = true
+
 						if os.isdir(extract_dir .. left .. v) then
 							return left .. v .. right .. "/"
 						end
 					end
 				end)
-				move_out = str
+				move_out = str			
 			until count == 0 or ok == false
 
 			move_out = extract_dir .. move_out
-
 			io.write("copying files ", move_out, "** -> ", to, "\n")
-
 			os.copyfiles(move_out, to)
 			os.removedir(extract_dir)
 		end
@@ -415,74 +338,78 @@ do
 		return true -- TODO
 	end
 
-	function get_github_project(name, to, domain, delete)
-        domain = domain or "github"
+	function extract_git_project(domain, location, branch, to)
+		io.write("extracting project\n")
+		branch = branch or "master"
+
 		if os.iscmd("git") then
 			if os.isdir(to) and os.isdir(to .. "/.git") then
-				os.readexecute("git -C "..absolute_path(to).." pull")
+				local cmd = "git -C " .. absolute_path(to) .. " pull"
+				io.write(cmd, "\n")
+				os.execute(cmd)
 			else
-				if to ~= "" and to:sub(#to, #to) ~= "/" then
-					to = to .. "/"
-				end
+				if to ~= "" and to:sub(#to, #to) ~= "/" then to = to .. "/" end
 
 				local extract_dir = to .. "temp"
-
 				extract_dir = absolute_path(extract_dir)
 				to = absolute_path(to)
-
-				local ok, err = os.execute("git clone https://"..domain..".com/"..name..".git \""..extract_dir.."\" --depth 1")
-
+				local cmd = "git clone https://" .. domain .. ".com/" .. location .. ".git \"" .. extract_dir .. "\" --depth 1"
+				io.write(cmd, "\n")
+				local ok, err = os.execute(cmd)
 				os.copyfiles(extract_dir, to)
 				os.removedir(extract_dir)
-
 				return ok, err
 			end
+
 			return true
 		else
 			local url
+
 			if domain == "gitlab" then
-				url = "https://"..domain..".com/"..name.."/repository/master/archive" .. ARCHIVE_EXT
+				url = "https://" .. domain .. ".com/" .. location .. "/repository/" .. branch .. "/archive" .. ARCHIVE_EXT
 			else
-				url = "https://"..domain..".com/"..name.."/archive/master" .. ARCHIVE_EXT
+				url = "https://" .. domain .. ".com/" .. location .. "/archive/" .. branch .. ARCHIVE_EXT
 			end
 
-			io.write("downloading ", url, " -> ", os.getcd(), "/temp", ARCHIVE_EXT, "\n")
+			io.write("downloading ", url, " -> ", "temp", ARCHIVE_EXT, "\n")
 
 			if os.download(url, "temp" .. ARCHIVE_EXT) then
-				io.write("extracting ", os.getcd(), "/temp", ARCHIVE_EXT, " -> ", os.getcd(), "/", to, "\n")
+				io.write("extracting ", "temp", ARCHIVE_EXT, " -> ", to, "\n")
 				local ok = os.extract("temp" .. ARCHIVE_EXT, to, "*/")
-
 				os.remove(absolute_path("temp" .. ARCHIVE_EXT))
-
 				return ok
 			end
 		end
 	end
 end
 
-local STORAGE_PATH = os.getenv("GOLUWA_STORAGE_PATH")
+local STORAGE_PATH = "storage"
 local ARG_LINE = os.getenv("GOLUWA_ARG_LINE") or ""
 local SCRIPT_PATH = os.getenv("GOLUWA_SCRIPT_PATH")
+local BRANCH = os.getenv("GOLUWA_BRANCH")
 local RAN_FROM_FILEBROWSER = os.getenv("GOLUWA_RAN_FROM_FILEBROWSER")
 local BINARY_DIR = "core/bin/" .. OS .. "_" .. ARCH .. "/"
-
 local lua_exec = UNIX and "luajit" or "luajit.exe"
+local instructions_path = "storage/shared/copy_binaries_instructions"
 
-if not os.isfile(BINARY_DIR .. lua_exec) then
-	os.makedir(BINARY_DIR)
-	os.copyfiles(STORAGE_PATH .. "/bin/" .. OS .. "_" .. ARCH .. "/", BINARY_DIR)
+if ARG_LINE:sub(0, #"nattlua") == "nattlua" then
+	local args = {}
 
-	if UNIX then
-		os.execute("chmod +x " .. BINARY_DIR .. lua_exec)
+	for str in (ARG_LINE .. " "):gmatch("[^%s]+") do
+		list.insert(args, str)
 	end
+
+	list.remove(args, 1)
+	assert(loadfile("core/lua/modules/nattlua/build_output.lua"))(unpack(args))
+	return
 end
 
-local instructions_path = "storage/shared/copy_binaries_instructions"
 if os.isfile(instructions_path) then
 	for from, to in io.readfile(instructions_path):gmatch("(.-);(.-)\n") do
 		io.write("copying ", from, " to ", to, "\n")
 		os.copyfile(from, to)
 	end
+
 	os.remove(instructions_path)
 end
 
@@ -491,27 +418,25 @@ do -- tmux
 		assert(os.iscmd("tmux"), "tmux is not installed")
 
 		if not has_tmux_session() then
-			os.readexecute("tmux new-session -d -s "..session_id)
-			os.readexecute("tmux send-keys -t "..session_id..' "export GOLUWA_TMUX=1" C-m')
-			os.readexecute("tmux send-keys -t "..session_id..' "./goluwa" C-m')
+			os.readexecute("tmux new-session -d -s " .. session_id)
+			os.readexecute("tmux send-keys -t " .. session_id .. " \"export GOLUWA_TMUX=1\" C-m")
+			os.readexecute(
+				"tmux send-keys -t " .. session_id .. " 'while true; do ./goluwa; if [ $? -eq 0 ]; then break; fi; done' C-m"
+			)
 		end
 
-		os.readexecute("tmux attach-session -t "..session_id)
-
+		os.readexecute("tmux attach-session -t " .. session_id)
 		os.exit()
 	end
 
 	if ARG_LINE == "attach" and has_tmux_session() then
-		os.readexecute("tmux attach-session -t "..session_id)
-
+		os.readexecute("tmux attach-session -t " .. session_id)
 		return
 	end
 
 	if not os.getenv("GOLUWA_TMUX") and has_tmux_session() and ARG_LINE ~= "" then
 		local prev = io.readfile("storage/shared/tmux_log.txt")
-
-		os.readexecute("tmux send-keys -t "..session_id..' "' .. ARG_LINE .. '__ENTERHACK__"')
-
+		os.readexecute("tmux send-keys -t " .. session_id .. " \"" .. ARG_LINE .. "__ENTERHACK__\"")
 		local timeout = os.clock() + 1
 
 		while true do
@@ -519,11 +444,13 @@ do -- tmux
 
 			if cur ~= prev and cur:sub(#prev):gsub("%s+", "") ~= "" then
 				io.write(cur:sub(#prev), "\n")
+
 				break
 			end
 
 			if timeout < os.clock() then
 				io.write("no resposne from goluwa\n")
+
 				break
 			end
 		end
@@ -537,7 +464,12 @@ if ARG_LINE == "update" or not os.isfile("core/lua/init.lua") then
 		io.write("missing core/lua/init.lua\n")
 	end
 
-	if os.isfile(".git/config") and io.readfile(".git/config"):find("goluwa") and os.iscmd("git") then
+	if
+		ARG_LINE == "update" and
+		os.isfile(".git/config") and
+		io.readfile(".git/config"):find("goluwa") and
+		os.iscmd("git")
+	then
 		io.write("updating from git repository\n")
 		os.execute("git pull")
 	else
@@ -551,7 +483,7 @@ if ARG_LINE == "update" or not os.isfile("core/lua/init.lua") then
 			end
 		end
 
-		get_github_project("CapsAdmin/goluwa", "", "gitlab")
+		extract_git_project("gitlab", "CapsAdmin/goluwa", BRANCH, "")
 
 		if not os.isfile("core/lua/init.lua") then
 			io.write("still missing core/lua/init.lua\n")
@@ -560,18 +492,18 @@ if ARG_LINE == "update" or not os.isfile("core/lua/init.lua") then
 	end
 end
 
-if ARG_LINE == "update" then
-	os.exit(1)
-end
+if ARG_LINE == "update" then os.exit(0) end
 
 local initlua = "core/lua/init.lua"
 local executable = "luajit"
 
 do
 	local what = "ljv"
-	local start, stop = ARG_LINE:find("^"..what.." (%S+)")
+	local start, stop = ARG_LINE:find("^" .. what .. " (%S+)")
+
 	if start then
 		local arg = ARG_LINE:sub(#what + 2, stop)
+
 		if os.isfile(BINARY_DIR .. "/luajit_" .. arg .. (WINDOWS and ".exe" or "")) then
 			executable = "luajit_" .. arg
 		else
@@ -582,75 +514,83 @@ do
 end
 
 if not os.getenv("GOLUWA_SKIP_LIBTLS") then
-	local base_url = "https://gitlab.com/CapsAdmin/goluwa-binaries/raw/master/core/bin/"..OS.."_"..ARCH.."/"
-
+	local base_url = "https://gitlab.com/CapsAdmin/goluwa-binaries/raw/master/core/bin/" .. OS .. "_" .. ARCH .. "/"
 	local files = {
 		"libtls",
 		"libcrypto",
 		"libssl",
-		"libtls",
 	}
 
 	for _, name in ipairs(files) do
 		name = name .. SHARED_LIBRARY_EXT
+
 		if not os.isfile(BINARY_DIR .. name) then
 			os.download(base_url .. name, BINARY_DIR .. name)
 		end
 	end
+
+	local cert_pem = STORAGE_PATH .. "/shared/cert.pem"
+
+	if not os.isfile(cert_pem) then
+		os.makedir(STORAGE_PATH .. "/shared/")
+		os.download(
+			"https://raw.githubusercontent.com/libressl-portable/openbsd/master/src/lib/libcrypto/cert.pem",
+			cert_pem
+		)
+	end
 end
 
 os.setenv("GOLUWA_BOOT_TIME", tostring(os.clock() - start_time))
-os.setenv("LD_LIBRARY_PATH", ".")
+local lua = require("core/bin/shared/luajit")
+local signals = {
+	SIGSEGV = 11,
+}
+ffi.cdef([[
+	typedef void (*sighandler_t)(int32_t);
+	sighandler_t signal(int32_t signum, sighandler_t handler);
+	uint32_t getpid();
+	int backtrace (void **buffer, int size);
+	char ** backtrace_symbols_fd(void *const *buffer, int size, int fd);
+	int kill(uint32_t pid, int sig);
+]])
+local LUA_GLOBALSINDEX = -10002
+local state = lua.L.newstate()
 
-local ret, msg, code
+for _, what in ipairs({"SIGSEGV"}) do
+	local enum = signals[what]
 
-if UNIX then
+	ffi.C.signal(enum, function(int)
+		io.write("received signal ", what, "\n")
 
-	if ARG_LINE:find("gdb") then
-		assert(os.iscmd("gdb"), "gdb is not installed")
-		assert(os.iscmd("git"), "git is not installed")
-
-		local utils = os.readexecute("pwd -P"):sub(0,-2) .. "/storage/temp/openresty-gdb-utils"
-
-		if not os.isdir(utils) then
-			os.execute("git clone https://github.com/openresty/openresty-gdb-utils.git " .. utils .. " --depth 1;")
+		if what == "SIGSEGV" then
+			io.write("C stack traceback:\n")
+			local max = 64
+			local array = ffi.new("void *[?]", max)
+			local size = ffi.C.backtrace(array, max)
+			ffi.C.backtrace_symbols_fd(array, size, 0)
+			io.write()
+			local header = "========== attempting lua traceback =========="
+			io.write("\n\n", header, "\n")
+			lua.L.traceback(state, state, nil, 0)
+			local len = ffi.new("uint64_t[1]")
+			local ptr = lua.tolstring(state, -1, len)
+			io.write(ffi.string(ptr, len[0]))
+			io.write("\n", ("="):rep(#header), "\n")
+			ffi.C.signal(int, nil)
+			ffi.C.kill(ffi.C.getpid(), int)
 		end
-
-		local gdb = "gdb "
-		gdb = gdb .. "--ex 'py import sys' "
-		gdb = gdb .. "--ex 'py sys.path.append(\""..utils.."\")' "
-		gdb = gdb .. "--ex 'source openresty-gdb-utils/luajit21.py' "
-		gdb = gdb .. "--ex 'set non-stop off' "
-		gdb = gdb .. "--ex 'target remote | vgdb' "
-		gdb = gdb .. "--ex 'monitor leak_check' "
-		gdb = gdb .. "--ex 'run' --args " .. BINARY_DIR .. "/"..executable .. " " .. initlua
-
-		local valgrind = "valgrind "
-		valgrind = valgrind .. "--vgdb=yes "
-		valgrind = valgrind .. "--vgdb-error=1 "
-		valgrind = valgrind .. "--tool=memcheck "
-		valgrind = valgrind .. "--leak-check=full "
-		valgrind = valgrind .. "--leak-resolution=high "
-		valgrind = valgrind .. "--show-reachable=yes "
-		valgrind = valgrind .. "--read-var-info=yes "
-		valgrind = valgrind .. "--suppressions=./"..BINARY_DIR.."/lj.supp "
-		valgrind = valgrind .. "./" .. BINARY_DIR .. "/"..executable .. " " .. initlua
-
-		if os.getenv("DISPLAY") then
-			if os.iscmd("valgrind") then
-			--	os.execute("xterm -hold -e " .. valgrind .. " &")
-			else
-				print("valgrind is not installed")
-			end
-			ret, msg, code = os.execute("xterm -hold -e " .. gdb)
-		else
-			ret, msg, code = os.execute(gdb)
-		end
-	else
-		ret, msg, code = os.execute("./" .. BINARY_DIR .. "/"..executable.." " .. initlua)
-	end
-else
-	ret, msg, code = os.execute(winpath(BINARY_DIR .. "\\"..executable..".exe " .. os.getcd():gsub("\\", "/") .. "/" .. initlua))
+	end)
 end
 
-os.exit(code)
+lua.L.openlibs(state)
+
+local function check_error(ok)
+	if ok ~= 0 then
+		error(initlua .. " errored: \n" .. ffi.string(lua.tolstring(state, -1, nil)))
+		lua.close(state)
+	end
+end
+
+check_error(lua.L.loadfile(state, initlua))
+check_error(lua.pcall(state, 0, 0, 0))
+os.exit(0)

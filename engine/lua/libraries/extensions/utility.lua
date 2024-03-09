@@ -1,15 +1,12 @@
 function utility.MeldDiff(a, b)
 	local name_a = os.tmpname()
 	local name_b = os.tmpname()
-
 	local f = io.open(name_a, "wb")
 	f:write(a)
 	f:close()
-
 	local f = io.open(name_b, "wb")
 	f:write(b)
 	f:close()
-
 	os.execute("meld " .. name_a .. " " .. name_b)
 end
 
@@ -31,7 +28,7 @@ do
 			os = "Other" -- xbox360 ?
 		end
 
-		if def:startswith("!") then
+		if def:starts_with("!") then
 			if os:find(jit.os, nil, true) then
 				return ""
 			else
@@ -56,41 +53,33 @@ do
 
 	function utility.VDFToTable(str, lower_or_modify_keys, preprocess)
 		if not str or str == "" then return nil, "data is empty" end
+
 		if lower_or_modify_keys == true then lower_or_modify_keys = string.lower end
 
 		str = str:gsub("[\r\n]", "\n")
 		str = str:replace("http://", "___L_O_L___")
 		str = str:replace("https://", "___L_O_L_2___")
-
 		str = str:gsub("//.-\n", "\n")
-
 		str = str:replace("___L_O_L___", "http://")
 		str = str:replace("___L_O_L_2___", "https://")
-
 		str = str:gsub("([%d%a.\"_]+%s-)(%b\"\"%s-)%[(%p+%S-)%]", replace_1)
 		str = str:gsub("([%d%a.\"_]+%s-)%[(%p+%S-)%](%s-%b{})", replace_2)
-
 		local in_string = false
 		local capture = {}
 		local no_quotes = false
-
 		local out = {}
 		local current = out
 		local stack = {current}
-
 		local key
-
-		local chars = str:utotable()
+		local chars = str:utf8_to_list()
 
 		for i, char in ipairs(chars) do
-			if (char == [["]] or (no_quotes and char:find("%s"))) and chars[i-1] ~= "\\" then
+			if (char == [["]] or (no_quotes and char:find("%s"))) and chars[i - 1] ~= "\\" then
 				if in_string then
 					if key then
-						if lower_or_modify_keys then
-							key = lower_or_modify_keys(key)
-						end
+						if lower_or_modify_keys then key = lower_or_modify_keys(key) end
 
-						local val = table.concat(capture, "")
+						local val = list.concat(capture, "")
 
 						if preprocess and val:find("|") then
 							for k, v in pairs(preprocess) do
@@ -100,16 +89,23 @@ do
 
 						if val:lower() == "false" then
 							val = false
-						elseif val:lower() ==  "true" then
-							val =  true
+						elseif val:lower() == "true" then
+							val = true
 						elseif val:find("%b{}") then
 							local values = val:match("{(.+)}"):trim():split(" ")
+
 							if #values == 3 or #values == 4 then
 								val = ColorBytes(tonumber(values[1]), tonumber(values[2]), tonumber(values[3]), values[4] or 255)
 							end
 						elseif val:find("%b[]") then
 							local values = val:match("%[(.+)%]"):trim():split(" ")
-							if #values == 3 and tonumber(values[1]) and tonumber(values[2]) and tonumber(values[3]) then
+
+							if
+								#values == 3 and
+								tonumber(values[1]) and
+								tonumber(values[2]) and
+								tonumber(values[3])
+							then
 								val = Vec3(tonumber(values[1]), tonumber(values[2]), tonumber(values[3]))
 							end
 						else
@@ -117,20 +113,19 @@ do
 						end
 
 						if type(current[key]) == "table" then
-							table.insert(current[key], val)
+							list.insert(current[key], val)
 						elseif current[key] and current[key] ~= val then
 							current[key] = {current[key], val}
 						else
 							if key:find("+", nil, true) then
 								for _, key in ipairs(key:split("+")) do
 									if type(current[key]) == "table" then
-										table.insert(current[key], val)
+										list.insert(current[key], val)
 									elseif current[key] and current[key] ~= val then
 										current[key] = {current[key], val}
 									else
 										current[key] = val
 									end
-
 								end
 							else
 								current[key] = val
@@ -139,25 +134,23 @@ do
 
 						key = nil
 					else
-						key = table.concat(capture, "")
+						key = list.concat(capture, "")
 					end
 
 					in_string = false
 					no_quotes = false
-					table.clear(capture)
+					list.clear(capture)
 				else
 					in_string = true
 				end
 			else
 				if in_string then
-					table.insert(capture, char)
+					list.insert(capture, char)
 				elseif char == [[{]] then
 					if key then
-						if lower_or_modify_keys then
-							key = lower_or_modify_keys(key)
-						end
+						if lower_or_modify_keys then key = lower_or_modify_keys(key) end
 
-						table.insert(stack, current)
+						list.insert(stack, current)
 						current[key] = {}
 						current = current[key]
 						key = nil
@@ -165,24 +158,21 @@ do
 						logn("=========STACK=========")
 						table.print(stack)
 						logn("=======================")
-
 						logn("=========CAPTURE=======")
 						table.print(capture)
 						logn("=======================")
-
 						logn("=========CURRENT=======")
 						table.print(current)
 						logn("=======================")
-
 						logn("in_string = ", in_string)
 						return nil, "stack imbalance at char " .. i
 					end
 				elseif char == [[}]] then
-					current = table.remove(stack) or out
+					current = list.remove(stack) or out
 				elseif not char:find("%s") then
 					in_string = true
 					no_quotes = true
-					table.insert(capture, char)
+					list.insert(capture, char)
 				end
 			end
 		end
@@ -191,7 +181,9 @@ do
 	end
 
 	if RELOAD then
-		local str = vfs.Read("/media/caps/Elements/SteamLibrary/steamapps/common/Team Fortress 2/tf/resource/tf_english.txt")
+		local str = vfs.Read(
+			"/media/caps/Elements/SteamLibrary/steamapps/common/Team Fortress 2/tf/resource/tf_english.txt"
+		)
 		str = str:replace("\0", "")
 		table.print(utility.VDFToTable(str, true))
 	end

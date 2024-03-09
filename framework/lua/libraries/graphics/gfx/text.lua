@@ -1,5 +1,4 @@
 local gfx = (...) or _G.gfx
-
 gfx.GetDefaultFont = fonts.GetDefaultFont
 
 function gfx.SetFont(font)
@@ -13,10 +12,9 @@ end
 local X, Y = 0, 0
 
 function gfx.DrawText(str, x, y, w, align_x, align_y)
-	local ux,uy,uw,uh,usx,usy = render2d.GetRectUV()
+	local ux, uy, uw, uh, usx, usy = render2d.GetRectUV()
 	local old_tex = render2d.GetTexture()
-	local r,g,b,a = render2d.GetColor()
-
+	local r, g, b, a = render2d.GetColor()
 	x = x or X
 	y = y or Y
 
@@ -27,10 +25,9 @@ function gfx.DrawText(str, x, y, w, align_x, align_y)
 	end
 
 	gfx.GetFont():DrawString(str, x, y, w)
-
-	render2d.SetRectUV(ux,uy,uw,uh,usx,usy)
+	render2d.SetRectUV(ux, uy, uw, uh, usx, usy)
 	render2d.SetTexture(old_tex)
-	render2d.SetColor(r,g,b,a)
+	render2d.SetColor(r, g, b, a)
 end
 
 function gfx.SetTextPosition(x, y)
@@ -47,7 +44,6 @@ do
 
 	function gfx.GetTextSize(str, font)
 		str = str or "|"
-
 		font = font or gfx.GetFont()
 
 		if cache[font] and cache[font][str] then
@@ -55,35 +51,26 @@ do
 		end
 
 		local x, y = font:GetTextSize(str)
-
 		cache[font] = cache[font] or table.weak()
 		cache[font][str] = cache[font][str] or table.weak()
 		cache[font][str][1] = x
 		cache[font][str][2] = y
-
 		return x, y
 	end
 
 	function gfx.InvalidateFontSizeCache(font)
-		if font then
-			cache[font] = nil
-		else
-			cache = {}
-		end
+		if font then cache[font] = nil else cache = {} end
 	end
 end
 
 do -- text wrap
-
 	local function wrap_1(str, max_width)
 		local lines = {}
 		local i = 1
-
 		local last_pos = 0
 		local line_width = 0
-
 		local space_pos
-		local tbl = str:utotable()
+		local tbl = str:utf8_to_list()
 
 		--local pos = 1
 		--for _ = 1, 10000 do
@@ -92,44 +79,39 @@ do -- text wrap
 		for pos, char in ipairs(tbl) do
 			local w = gfx.GetTextSize(char)
 
-			if char:find("%s") then
-				space_pos = pos
-			end
+			if char:find("%s") then space_pos = pos end
 
 			if line_width + w >= max_width then
-
 				if space_pos then
-					lines[i] = str:usub(last_pos + 1, space_pos)
+					lines[i] = str:utf8_sub(last_pos + 1, space_pos)
 					last_pos = space_pos
 				else
-					lines[i] = str:usub(last_pos + 1, pos)
+					lines[i] = str:utf8_sub(last_pos + 1, pos)
 					last_pos = pos
 				end
 
 				i = i + 1
-
 				line_width = 0
 				space_pos = nil
 			end
 
 			line_width = line_width + w
-			--pos = pos + 1
+		--pos = pos + 1
 		end
 
 		if lines[1] then
-			lines[i] = str:usub(last_pos+1)
-			return table.concat(lines, "\n")
+			lines[i] = str:utf8_sub(last_pos + 1)
+			return list.concat(lines, "\n")
 		end
 
 		return str
 	end
 
 	local function wrap_2(str, max_width, font)
-		local tbl = str:utotable()
+		local tbl = str:utf8_to_list()
 		local lines = {}
 		local chars = {}
 		local i = 1
-
 		local width = 0
 		local width_before_last_space = 0
 		local width_of_trailing_space = 0
@@ -138,18 +120,15 @@ do -- text wrap
 
 		while i < #tbl do
 			local c = tbl[i]
-
 			local char_width = gfx.GetTextSize(c, font)
 			local new_width = width + char_width
 
 			if c == "\n" then
-				table.insert(lines, table.concat(chars))
-				table.clear(chars)
-
+				list.insert(lines, list.concat(chars))
+				list.clear(chars)
 				width = 0
 				width_before_last_space = 0
 				width_of_trailing_space = 0
-
 				prev_char = nil
 				last_space_index = -1
 				i = i + 1
@@ -158,10 +137,9 @@ do -- text wrap
 					i = i + 1
 				elseif last_space_index ~= -1 then
 					for i = #chars, 1, -1 do
-						if chars[i] == " " then
-							break
-						end
-						table.remove(chars, i)
+						if chars[i] == " " then break end
+
+						list.remove(chars, i)
 					end
 
 					width = width_before_last_space
@@ -169,9 +147,8 @@ do -- text wrap
 					i = i + 1
 				end
 
-				table.insert(lines, table.concat(chars))
-				table.clear(chars)
-
+				list.insert(lines, list.concat(chars))
+				list.clear(chars)
 				prev_char = nil
 				width = char_width
 				width_before_last_space = 0
@@ -184,8 +161,7 @@ do -- text wrap
 
 				width = new_width
 				prev_char = c
-
-				table.insert(chars, c)
+				list.insert(chars, c)
 
 				if c == " " then
 					last_space_index = i
@@ -197,11 +173,9 @@ do -- text wrap
 			end
 		end
 
-		if #chars ~= 0 then
-			table.insert(lines, table.concat(chars))
-		end
+		if #chars ~= 0 then list.insert(lines, list.concat(chars)) end
 
-		return table.concat(lines, "\n")
+		return list.concat(lines, "\n")
 	end
 
 	local cache = table.weak()
@@ -214,17 +188,15 @@ do -- text wrap
 		end
 
 		if max_width < gfx.GetTextSize(nil, font) then
-			return table.concat(str:split(""), "\n")
+			return list.concat(str:split(""), "\n")
 		end
-		if max_width > gfx.GetTextSize(str, font) then
-			return str
-		end
+
+		if max_width > gfx.GetTextSize(str, font) then return str end
 
 		local res = wrap_2(str, max_width, font)
 		cache[str] = cache[str] or {}
 		cache[str][max_width] = cache[str][max_width] or {}
 		cache[str][max_width][font] = res
-
 		return res
 	end
 end
@@ -232,12 +204,12 @@ end
 function gfx.DotLimitText(text, w, font)
 	local strw, strh = gfx.GetTextSize(text, font)
 	local dot_w = gfx.GetTextSize(".", font)
-	if strw > w+2 then
+
+	if strw > w + 2 then
 		local x = 0
-		for i, char in ipairs(text:utotable()) do
-			if x >= w - dot_w*3 then
-				return text:usub(0, i-2) .. "..."
-			end
+
+		for i, char in ipairs(text:utf8_to_list()) do
+			if x >= w - dot_w * 3 then return text:utf8_sub(0, i - 2) .. "..." end
 
 			x = x + gfx.GetTextSize(char, font)
 		end
@@ -245,4 +217,3 @@ function gfx.DotLimitText(text, w, font)
 
 	return text
 end
-

@@ -1,172 +1,200 @@
 for lib_name, enum_name in pairs({al = "AL_", alc = "ALC_"}) do
-	ffibuild.Build({
-		name = "openal",
-		url = "https://github.com/kcat/openal-soft.git",
-		cmd = "cmake . && make",
-		addon = vfs.GetAddonFromPath(SCRIPT_PATH),
-		lua_name = lib_name,
-		shared_library_name = "openal",
+	ffibuild.Build(
+		{
+			name = "openal",
+			addon = vfs.GetAddonFromPath(SCRIPT_PATH),
+			lua_name = lib_name,
+			shared_library_name = "openal",
+			linux = [[
+				FROM ubuntu:20.04
 
-		c_source = [[
+				ARG DEBIAN_FRONTEND=noninteractive
+				ENV TZ=America/New_York
+				RUN apt-get update
+
+				RUN apt-get install -y libpulse-dev portaudio19-dev libasound2-dev libjack-dev qtbase5-dev libdbus-1-dev cmake g++ 
+				RUN apt-get install -y git
+
+				WORKDIR /src
+				RUN git clone https://github.com/kcat/openal-soft.git --depth 1 .
+				RUN cmake . && make --jobs 32
+			]],
+			c_source = [[
 			#define AL_ALEXT_PROTOTYPES 1
 			#include "AL/alc.h"
 			#include "AL/alext.h"
 			#include "AL/al.h"
 			#include "AL/efx.h"
 		]],
-		gcc_flags = "-I./include/AL",
+			gcc_flags = "-I./include",
+			process_header = function(header)
+				ffibuild.SetBuildName(lib_name)
+				local meta_data = ffibuild.GetMetaData(header)
+				return meta_data:BuildMinimalHeader(
+					function(name)
+						return name:find("^" .. lib_name .. "%u")
+					end,
+					function(name)
+						return name:find("^" .. enum_name)
+					end,
+					true,
+					true
+				)
+			end,
+			build_lua = function(header, meta_data)
+				ffibuild.SetBuildName(lib_name)
+				-- seems to be windows only
+				meta_data.functions.alcReopenDeviceSOFT = nil
+				local s = [=[
+					local ffi = require("ffi")
+					local CLIB = assert(ffi.load("openal"))
+					ffi.cdef([[]=] .. header .. [=[]])
+				]=]
 
-		process_header = function(header)
-			ffibuild.SetBuildName(lib_name)
-			local meta_data = ffibuild.GetMetaData(header)
-
-			return meta_data:BuildMinimalHeader(
-				function(name)
-					return name:find("^" .. lib_name .. "%u")
-				end,
-				function(name)
-					return name:find("^" .. enum_name)
-				end,
-				true,
-				true
-			)
-		end,
-		build_lua = function(header, meta_data)
-			ffibuild.SetBuildName(lib_name)
-			local lua = ffibuild.StartLibrary(header)
-
-			if lib_name == "al" then
-				lua = lua .. [[
-		local function get_proc_address(func, cast)
-			local ptr = CLIB.alGetProcAddress(func)
-			if ptr ~= nil then
-				return ffi.cast(cast, ptr)
-			end
-		end
-		]]
-
-				lua = lua .. "library = {\n"
-				for func_name, type in pairs(meta_data.functions) do
-					local friendly = func_name:match("^"..lib_name.."(%u.+)")
-					if friendly then
-						lua = lua .. "\t" .. friendly .. " = get_proc_address(\""..func_name.."\", \""..type:GetDeclaration(meta_data, "*", "").."\"),\n"
-					end
-				end
-				lua = lua .. "}\n"
-			else
-				lua = lua .. "library = " .. meta_data:BuildFunctions("^"..lib_name.."(%u.+)")
-			end
-
-			local args = {}
-
-			for _, name in ipairs({"al", "alc", "alext", "efx"}) do
-				table.insert(args, {"./include/AL/" .. name .. ".h", enum_name})
-			end
-
-			local enums = meta_data:BuildEnums("^"..enum_name.."(.+)", args)
-
-			lua = lua .. "library.e = " .. enums
-
-			if lib_name == "al" then
-
-				local function gen_available_params(type, user_unavailable) -- effect params
-					local available = {}
-
-					local unavailable = {
-						last_parameter = true,
-						first_parameter = true,
-						type = true,
-						null = true,
-					}
-
-					local enums = loadstring("return " .. enums)()
-
-					for k,v in pairs(user_unavailable) do
-						unavailable[v] = true
-					end
-
-					local type_pattern = type:upper().."_(.+)"
-
-					for key, val in pairs(enums) do
-						local type = key:match(type_pattern)
-
-						if type then
-							type = type:lower()
-							if not unavailable[type] then
-								available[type] = {enum = val, params = {}}
+				if lib_name == "al" then
+					s = s .. [[
+						local function get_proc_address(func, cast)
+							local ptr = CLIB.alGetProcAddress(func)
+							if ptr ~= nil then
+								return ffi.cast(cast, ptr)
 							end
+						end
+					]]
+					s = s .. "local library = {\n"
+
+					for func_name, type in table.sorted_pairs(meta_data.functions, function(a, b)
+						return a.key < b.key
+					end) do
+						local friendly = func_name:match("^" .. lib_name .. "(%u.+)")
+
+						if friendly then
+							s = s .. "\t" .. friendly .. " = get_proc_address(\"" .. func_name .. "\", \"" .. type:GetDeclaration(meta_data, "*", "") .. "\"),\n"
 						end
 					end
 
-					for name, data in pairs(available) do
+					s = s .. "}\n"
+				else
+					s = s .. "local library = " .. meta_data:BuildLuaFunctions("^" .. lib_name .. "(%u.+)")
+				end
+
+				local args = {}
+
+				for _, name in ipairs({"al", "alc", "alext", "efx"}) do
+					list.insert(args, {"./include/AL/" .. name .. ".h", enum_name})
+				end
+
+				local enums = meta_data:BuildLuaEnums("^" .. enum_name .. "(.+)", args)
+				s = s .. "library.e = " .. enums
+
+				if lib_name == "al" then
+					local function gen_available_params(type, user_unavailable) -- effect params
+						local available = {}
+						local unavailable = {
+							last_parameter = true,
+							first_parameter = true,
+							type = true,
+							null = true,
+						}
+						local enums = loadstring("return " .. enums)()
+
+						for k, v in pairs(user_unavailable) do
+							unavailable[v] = true
+						end
+
+						local type_pattern = type:upper() .. "_(.+)"
+
 						for key, val in pairs(enums) do
-							local param = key:match(name:upper() .. "_(.+)")
+							local type = key:match(type_pattern)
 
-							if param then
-								local name = param:lower()
+							if type then
+								type = type:lower()
 
-								if param:find("DEFAULT_") then
-									name = param:match("DEFAULT_(.+)")
-									key = "default"
-								elseif param:find("MIN_") then
-									name = param:match("MIN_(.+)")
-									key = "min"
-								elseif param:find("MAX_") then
-									name = param:match("MAX_(.+)")
-									key = "max"
-								else
-									key = "enum"
+								if not unavailable[type] then
+									available[type] = {enum = val, params = {}}
 								end
-
-								name = name:lower()
-
-								data.params[name] = data.params[name] or {}
-								data.params[name][key] = val
 							end
 						end
+
+						for name, data in pairs(available) do
+							for key, val in pairs(enums) do
+								local param = key:match("^" .. name:upper() .. "_(.+)")
+
+								if param then
+									local name = param:lower()
+
+									if param:find("DEFAULT_") then
+										name = param:match("DEFAULT_(.+)")
+										key = "default"
+									elseif param:find("MIN_") then
+										name = param:match("MIN_(.+)")
+										key = "min"
+									elseif param:find("MAX_") then
+										name = param:match("MAX_(.+)")
+										key = "max"
+									else
+										key = "enum"
+									end
+
+									name = name:lower()
+									data.params[name] = data.params[name] or {}
+									data.params[name][key] = val
+								end
+							end
+						end
+
+						s = s .. "library." .. type .. "Params = {\n"
+
+						for type, info in table.sorted_pairs(available, function(a, b)
+							return a.key < b.key
+						end) do
+							s = s .. "\t" .. type .. " = {\n"
+							s = s .. "\t\t" .. "enum = " .. tostring(info.enum) .. ",\n"
+							s = s .. "\t\t" .. "params = {\n"
+
+							for key, tbl in table.sorted_pairs(info.params, function(a, b)
+								return a.key < b.key
+							end) do
+								s = s .. "\t\t\t" .. key .. " = {\n"
+
+								for key, val in table.sorted_pairs(tbl, function(a, b)
+									return a.key < b.key
+								end) do
+									s = s .. "\t\t\t\t" .. key .. " = " .. tostring(val) .. ",\n"
+								end
+
+								s = s .. "\t\t\t" .. "},\n"
+							end
+
+							s = s .. "\t\t" .. "},\n"
+							s = s .. "\t" .. "},\n"
+						end
+
+						s = s .. "}\n"
+						s = s .. "function library.GetAvailable" .. type .. "s()\n\treturn library." .. type .. "Params\nend\n"
 					end
 
-					lua = lua .. "library." .. type .. "Params = {\n"
-						for type, info in pairs(available) do
-							lua = lua .. "\t" .. type .. " = {\n"
-								lua = lua .. "\t\t" .. "enum = " .. tostring(info.enum) .. ",\n"
-								lua = lua .. "\t\t" .. "params = {\n"
-								for key, tbl in pairs(info.params) do
-									lua = lua .. "\t\t\t" .. key .. " = {\n"
-										for key, val in pairs(tbl) do
-											lua = lua .. "\t\t\t\t" .. key .. " = " .. tostring(val) .. ",\n"
-										end
-									lua = lua .. "\t\t\t" .. "},\n"
-								end
-								lua = lua .. "\t\t" .. "},\n"
-							lua = lua .. "\t" .. "},\n"
-						end
-					lua = lua .. "}\n"
-
-					lua = lua .. "function library.GetAvailable" .. type .. "s()\n\treturn library." .. type .. "Params\nend\n"
+					gen_available_params("Effect", {"pitch_shifter", "vocal_morpher", "frequency_shifter"})
+					gen_available_params("Filter", {"highpass", "bandpass"})
 				end
 
-				gen_available_params("Effect", {"pitch_shifter", "vocal_morpher", "frequency_shifter"})
-				gen_available_params("Filter", {"highpass", "bandpass"})
-			end
+				for func_name in table.sorted_pairs(meta_data.functions, function(a, b)
+					return a.key < b.key
+				end) do
+					local friendly = func_name:match("^" .. lib_name .. "(%u.+)")
 
-			for func_name in pairs(meta_data.functions) do
-				local friendly = func_name:match("^"..lib_name.."(%u.+)")
-				if friendly and friendly:find("^Gen%u%l") then
-					local new_name = friendly:sub(0,-2) -- remove the last "s"
-					lua = lua ..
-		[[function library.]]..new_name..[[()
+					if friendly and friendly:find("^Gen%u%l") then
+						local new_name = friendly:sub(0, -2) -- remove the last "s"
+						s = s .. [[function library.]] .. new_name .. [[()
 			local id = ffi.new("unsigned int[1]")
-			library.]]..friendly..[[(1, id)
+			library.]] .. friendly .. [[(1, id)
 			return id[0]
 		end
 		]]
+					end
 				end
-			end
 
-
-			if lib_name == "alc" then
-				lua = lua .. [[
+				if lib_name == "alc" then
+					s = s .. [[
 		function library.GetErrorString(device)
 			local num = library.GetError(device)
 			if num == library.e.NO_ERROR then
@@ -184,8 +212,8 @@ for lib_name, enum_name in pairs({al = "AL_", alc = "ALC_"}) do
 			end
 		end
 		]]
-			elseif lib_name == "al" then
-				lua = lua .. [[
+				elseif lib_name == "al" then
+					s = s .. [[
 		function library.GetErrorString()
 			local num = library.GetError()
 			if num == library.e.NO_ERROR then
@@ -203,15 +231,17 @@ for lib_name, enum_name in pairs({al = "AL_", alc = "ALC_"}) do
 			end
 		end
 		]]
-		end
+				end
 
-		return ffibuild.EndLibrary(lua, header)
-	end,
-	translate_path = function(path)
-		local name = vfs.RemoveExtensionFromPath(vfs.GetFileNameFromPath(path))
-        if name:startswith("libopenal") then
-			return "libopenal"
-		end
-	end,
-})
+				s = s .. "library.clib = CLIB\n"
+				s = s .. "return library\n"
+				return s
+			end,
+			translate_path = function(path)
+				local name = vfs.RemoveExtensionFromPath(vfs.GetFileNameFromPath(path))
+
+				if name:starts_with("libopenal") then return "libopenal" end
+			end,
+		}
+	)
 end
